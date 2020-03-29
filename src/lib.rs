@@ -19,9 +19,10 @@
 //! assert_eq!([0u8; 2].get_int(u128::max_value()), None);
 //! ```
 #![no_std]
+use core::convert::TryInto;
 use core::num::TryFromIntError;
 use core::ops::{Range, RangeFrom, RangeTo};
-use core::convert::TryInto;
+use core::slice::SliceIndex;
 
 pub(crate) mod sealed {
     /// Using the actual ops::Index relies on this sealed trait.
@@ -40,10 +41,11 @@ pub(crate) mod sealed {
 }
 
 pub mod idx {
-    use core::num::TryFromIntError;
     use core::convert::TryInto;
+    use core::num::TryFromIntError;
+    use core::slice::SliceIndex;
 
-    use super::{sealed::Sealed, TrySliceIndex};
+    use super::{sealed::Sealed, IntSliceIndex};
 
     /// An indexing adaptor for `TryInto`.
     ///
@@ -59,32 +61,30 @@ pub mod idx {
     #[repr(transparent)]
     pub struct TryIndex<T>(pub T);
 
-    impl<T, U> TrySliceIndex<[U]> for TryIndex<T>
+    impl<T, U> IntSliceIndex<[U]> for TryIndex<T>
     where
         T: TryInto<usize>,
+        T::Error: Into<TryFromIntError>,
     {
-        type Output = U;
-        type Error = T::Error;
-
-        fn try_get(self, slice: &[U]) -> Result<&Self::Output, Self::Error> {
-            let idx: usize = self.0.try_into()?;
-            Ok(&slice[idx])
-        }
-        fn try_get_mut(self, slice: &mut [U]) -> Result<&mut Self::Output, Self::Error> {
-            let idx: usize = self.0.try_into()?;
-            Ok(&mut slice[idx])
+        type Index = usize;
+        fn index(self) -> Result<usize, TryFromIntError> {
+            match self.0.try_into() {
+                Ok(idx) => Ok(idx),
+                Err(err) => Err(err.into()),
+            }
         }
     }
 
     impl<T, U> core::ops::Index<TryIndex<T>> for [U]
     where 
         T: TryInto<usize> + Sealed,
+        T::Error: Into<TryFromIntError>,
     {
         type Output = U;
         fn index(&self, idx: TryIndex<T>) -> &U {
             let err = Sealed::copy(&idx.0);
-            match TrySliceIndex::try_get(idx, self) {
-                Ok(element) => element,
+            match IntSliceIndex::<Self>::index(idx) {
+                Ok(element) => &self[element],
                 Err(_) => Sealed::panic_msg(self.len(), err),
             }
         }
@@ -93,12 +93,13 @@ pub mod idx {
     impl<T, U> core::ops::IndexMut<TryIndex<T>> for [U]
     where 
         T: TryInto<usize> + Sealed,
+        T::Error: Into<TryFromIntError>,
     {
         fn index_mut(&mut self, idx: TryIndex<T>) -> &mut Self::Output {
             let err = Sealed::copy(&idx.0);
             let len = self.len();
-            match TrySliceIndex::try_get_mut(idx, self) {
-                Ok(element) => element,
+            match IntSliceIndex::<Self>::index(idx) {
+                Ok(element) => &mut self[element],
                 Err(_) => Sealed::panic_msg(len, err),
             }
         }
@@ -112,15 +113,14 @@ pub mod idx {
 
     impl<T, U> core::ops::Index<IntIndex<T>> for [U]
     where 
-        T: TrySliceIndex<[U]> + Sealed,
-        T::Error: Into<TryFromIntError>,
+        T: IntSliceIndex<[U]> + Sealed,
     {
-        type Output = <T as TrySliceIndex<[U]>>::Output;
+        type Output = <T::Index as SliceIndex<[U]>>::Output;
 
         fn index(&self, idx: IntIndex<T>) -> &Self::Output {
             let err = Sealed::copy(&idx.0);
-            match TrySliceIndex::try_get(idx.0, self) {
-                Ok(element) => element,
+            match IntSliceIndex::index(idx.0) {
+                Ok(element) => &self[element],
                 Err(_) => Sealed::panic_msg(self.len(), err),
             }
         }
@@ -128,71 +128,52 @@ pub mod idx {
 
     impl<T, U> core::ops::IndexMut<IntIndex<T>> for [U]
     where 
-        T: TrySliceIndex<[U]> + Sealed,
-        T::Error: Into<TryFromIntError>,
+        T: IntSliceIndex<[U]> + Sealed,
     {
         fn index_mut(&mut self, idx: IntIndex<T>) -> &mut Self::Output {
             let err = Sealed::copy(&idx.0);
             let len = self.len();
-            match TrySliceIndex::try_get_mut(idx.0, self) {
-                Ok(element) => element,
+            match IntSliceIndex::index(idx.0) {
+                Ok(element) => &mut self[element],
                 Err(_) => Sealed::panic_msg(len, err),
             }
         }
     }
 }
 
-pub trait TrySliceIndex<T: ?Sized> {
-    type Output: ?Sized;
-    type Error;
-
-    fn try_get(self, slice: &T) -> Result<&Self::Output, Self::Error>;
-    fn try_get_mut(self, slice: &mut T) -> Result<&mut Self::Output, Self::Error>;
-}
-
-/// A trait for fallible indexing.
-pub trait TryIndex {
-    fn try_get<T>(&self, idx: T) -> Result<&T::Output, T::Error>
-    where
-        T: TrySliceIndex<Self>;
-
-    fn try_get_mut<T>(&mut self, idx: T) -> Result<&mut T::Output, T::Error>
-    where
-        T: TrySliceIndex<Self>;
+pub trait IntSliceIndex<T: ?Sized> {
+    type Index: SliceIndex<T>;
+    fn index(self) -> Result<Self::Index, TryFromIntError>;
 }
 
 /// An extension trait allowing slices to be indexed by everything convertible to `usize`.
 pub trait IntIndex {
     fn get_int<T>(&self, idx: T)
-        -> Option<&'_ T::Output>
+        -> Option<&'_ <T::Index as SliceIndex<Self>>::Output>
     where
-        T: TrySliceIndex<Self>,
-        T::Error: Into<TryFromIntError>;
+        T: IntSliceIndex<Self>;
 
     fn get_int_mut<T>(&mut self, idx: T)
-        -> Option<&'_ mut T::Output>
+        -> Option<&'_ mut <T::Index as SliceIndex<Self>>::Output>
     where
-        T: TrySliceIndex<Self>,
-        T::Error: Into<TryFromIntError>;
+        T: IntSliceIndex<Self>;
 }
 
 impl<U> IntIndex for [U] {
     fn get_int<T>(&self, idx: T)
-        -> Option<&'_ T::Output>
+        -> Option<&'_ <T::Index as SliceIndex<Self>>::Output>
     where
-        T: TrySliceIndex<Self>,
-        T::Error: Into<TryFromIntError>
+        T: IntSliceIndex<Self>,
     {
-        TrySliceIndex::try_get(idx, self).ok()
+        self.get(IntSliceIndex::index(idx).ok()?)
     }
 
     fn get_int_mut<T>(&mut self, idx: T)
-        -> Option<&'_ mut T::Output>
+        -> Option<&'_ mut <T::Index as SliceIndex<Self>>::Output>
     where
-        T: TrySliceIndex<Self>,
-        T::Error: Into<TryFromIntError>
+        T: IntSliceIndex<Self>,
     {
-        TrySliceIndex::try_get_mut(idx, self).ok()
+        self.get_mut(IntSliceIndex::index(idx).ok()?)
     }
 }
 
@@ -201,71 +182,72 @@ macro_rules! slice_index {
     $(slice_index!($t);)*
 };
 ($t:ty) => {
-    impl<U> TrySliceIndex<[U]> for $t {
-        type Output = U;
-        type Error = <$t as TryInto<usize>>::Error;
-        fn try_get(self, slice: &[U]) -> Result<&Self::Output, Self::Error> {
-            let idx: usize = self.try_into()?;
-            Ok(&slice[idx])
-        }
-        fn try_get_mut(self, slice: &mut [U]) -> Result<&mut Self::Output, Self::Error> {
-            let idx: usize = self.try_into()?;
-            Ok(&mut slice[idx])
+    impl<U> IntSliceIndex<[U]> for $t {
+        type Index = usize;
+        fn index(self) -> Result<usize, TryFromIntError> {
+            Ok(self.try_into()?)
         }
     }
     
-    impl<U> TrySliceIndex<[U]> for Range<$t> {
-        type Output = [U];
-        type Error = <$t as TryInto<usize>>::Error;
-        fn try_get(self, slice: &[U]) -> Result<&Self::Output, Self::Error> {
+    impl<U> IntSliceIndex<[U]> for Range<$t> {
+        type Index = Range<usize>;
+        fn index(self) -> Result<Self::Index, TryFromIntError> {
             let Range { start, end } = self;
             let start: usize = start.try_into()?;
             let end: usize = end.try_into()?;
-            Ok(&slice[start..end])
-        }
-        fn try_get_mut(self, slice: &mut [U]) -> Result<&mut Self::Output, Self::Error> {
-            let Range { start, end } = self;
-            let start: usize = start.try_into()?;
-            let end: usize = end.try_into()?;
-            Ok(&mut slice[start..end])
+            Ok(start..end)
         }
     }
     
-    impl<U> TrySliceIndex<[U]> for RangeTo<$t> {
-        type Output = [U];
-        type Error = <$t as TryInto<usize>>::Error;
-        fn try_get(self, slice: &[U]) -> Result<&Self::Output, Self::Error> {
+    impl<U> IntSliceIndex<[U]> for RangeTo<$t> {
+        type Index = RangeTo<usize>;
+        fn index(self) -> Result<Self::Index, TryFromIntError> {
             let end: usize = self.end.try_into()?;
-            Ok(&slice[..end])
-        }
-        fn try_get_mut(self, slice: &mut [U]) -> Result<&mut Self::Output, Self::Error> {
-            let end: usize = self.end.try_into()?;
-            Ok(&mut slice[..end])
+            Ok(..end)
         }
     }
     
-    impl<U> TrySliceIndex<[U]> for RangeFrom<$t> {
-        type Output = [U];
-        type Error = <$t as TryInto<usize>>::Error;
-        fn try_get(self, slice: &[U]) -> Result<&Self::Output, Self::Error> {
+    impl<U> IntSliceIndex<[U]> for RangeFrom<$t> {
+        type Index = RangeFrom<usize>;
+        fn index(self) -> Result<Self::Index, TryFromIntError> {
             let start: usize = self.start.try_into()?;
-            Ok(&slice[start..])
-        }
-        fn try_get_mut(self, slice: &mut [U]) -> Result<&mut Self::Output, Self::Error> {
-            let start: usize = self.start.try_into()?;
-            Ok(&mut slice[start..])
+            Ok(start..)
         }
     }
 
     impl sealed::Sealed for $t {
         #[inline(always)]
-        fn copy(&self) -> Self {
-            *self
-        }
-
+        fn copy(&self) -> Self { *self }
         #[cold]
         fn panic_msg(len: usize, index: Self) -> ! {
             panic!("index {} out of range for slice of length {}", index, len)
+        }
+    }
+
+    impl sealed::Sealed for Range<$t> {
+        #[inline(always)]
+        fn copy(&self) -> Self { Range { .. *self } }
+        #[cold]
+        fn panic_msg(len: usize, index: Self) -> ! {
+            panic!("index {} out of range for slice of length {}", index.end, len)
+        }
+    }
+
+    impl sealed::Sealed for RangeFrom<$t> {
+        #[inline(always)]
+        fn copy(&self) -> Self { RangeFrom { .. *self } }
+        #[cold]
+        fn panic_msg(len: usize, index: Self) -> ! {
+            panic!("index {} out of range for slice of length {}", index.start, len)
+        }
+    }
+
+    impl sealed::Sealed for RangeTo<$t> {
+        #[inline(always)]
+        fn copy(&self) -> Self { RangeTo { .. *self } }
+        #[cold]
+        fn panic_msg(len: usize, index: Self) -> ! {
+            panic!("index {} out of range for slice of length {}", index.end, len)
         }
     }
 } }
