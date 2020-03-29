@@ -25,6 +25,8 @@ use core::ops::{Range, RangeFrom, RangeTo};
 use core::slice::SliceIndex;
 
 pub(crate) mod sealed {
+    use core::num::TryFromIntError;
+
     /// Using the actual ops::Index relies on this sealed trait.
     ///
     /// This is for two reasons. Firstly, it would be vastly more confusing than handling the result of
@@ -33,10 +35,31 @@ pub(crate) mod sealed {
     /// available without specialization or adding additional trait bounds to the public interface. By
     /// not exposing this we can always relax this later when, and if, specialization becomes
     /// available to stable Rust.
-    pub trait Sealed {
+    pub trait IndexSealed {
         fn copy(&self) -> Self;
         #[cold]
         fn panic_msg(limit: usize, idx: Self) -> !;
+    }
+
+    /// Makes it so there is one canonical conversion to an index.
+    ///
+    /// With `feature(associated_type_bounds)` we could then derive the trait for `IntSliceIndex`
+    /// while simultaneously asserting that the `Index: SliceIndex<T>`. However, for the moment
+    /// this is not possible so we instead use another trait, `Same<T, U>`, to perform that
+    /// conversion that is only a no-op.
+    ///
+    /// This implementation trouble motivates keeping the trait `IntSliceIndex` sealed.
+    pub trait IntoIntIndex {
+        type IntoIndex;
+        fn index(self) -> Result<Self::IntoIndex, TryFromIntError>;
+    }
+
+    pub trait Same<T> {
+        fn identity(this: T) -> Self;
+    }
+
+    impl<T> Same<T> for T {
+        fn identity(this: T) -> T { this }
     }
 }
 
@@ -45,7 +68,7 @@ pub mod idx {
     use core::num::TryFromIntError;
     use core::slice::SliceIndex;
 
-    use super::{sealed::Sealed, IntSliceIndex};
+    use super::{sealed::{IndexSealed, IntoIntIndex, Same}, IntSliceIndex};
 
     /// An indexing adaptor for `TryInto`.
     ///
@@ -61,46 +84,51 @@ pub mod idx {
     #[repr(transparent)]
     pub struct TryIndex<T>(pub T);
 
+    impl<T> IntoIntIndex for TryIndex<T>
+    where
+        T: TryInto<usize>,
+        T::Error: Into<TryFromIntError>,
+    {
+        type IntoIndex = usize;
+        fn index(self) -> Result<usize, TryFromIntError> {
+            self.0.try_into().map_err(Into::into)
+        }
+    }
+
     impl<T, U> IntSliceIndex<[U]> for TryIndex<T>
     where
         T: TryInto<usize>,
         T::Error: Into<TryFromIntError>,
     {
         type Index = usize;
-        fn index(self) -> Result<usize, TryFromIntError> {
-            match self.0.try_into() {
-                Ok(idx) => Ok(idx),
-                Err(err) => Err(err.into()),
-            }
-        }
     }
 
     impl<T, U> core::ops::Index<TryIndex<T>> for [U]
     where 
-        T: TryInto<usize> + Sealed,
+        T: TryInto<usize> + IndexSealed,
         T::Error: Into<TryFromIntError>,
     {
         type Output = U;
         fn index(&self, idx: TryIndex<T>) -> &U {
-            let err = Sealed::copy(&idx.0);
-            match IntSliceIndex::<Self>::index(idx) {
+            let err = IndexSealed::copy(&idx.0);
+            match IntoIntIndex::index(idx) {
                 Ok(element) => &self[element],
-                Err(_) => Sealed::panic_msg(self.len(), err),
+                Err(_) => IndexSealed::panic_msg(self.len(), err),
             }
         }
     }
 
     impl<T, U> core::ops::IndexMut<TryIndex<T>> for [U]
     where 
-        T: TryInto<usize> + Sealed,
+        T: TryInto<usize> + IndexSealed,
         T::Error: Into<TryFromIntError>,
     {
         fn index_mut(&mut self, idx: TryIndex<T>) -> &mut Self::Output {
-            let err = Sealed::copy(&idx.0);
+            let err = IndexSealed::copy(&idx.0);
             let len = self.len();
-            match IntSliceIndex::<Self>::index(idx) {
+            match IntoIntIndex::index(idx) {
                 Ok(element) => &mut self[element],
-                Err(_) => Sealed::panic_msg(len, err),
+                Err(_) => IndexSealed::panic_msg(len, err),
             }
         }
     }
@@ -113,37 +141,36 @@ pub mod idx {
 
     impl<T, U> core::ops::Index<IntIndex<T>> for [U]
     where 
-        T: IntSliceIndex<[U]> + Sealed,
+        T: IntSliceIndex<[U]> + IndexSealed,
     {
         type Output = <T::Index as SliceIndex<[U]>>::Output;
 
         fn index(&self, idx: IntIndex<T>) -> &Self::Output {
-            let err = Sealed::copy(&idx.0);
-            match IntSliceIndex::index(idx.0) {
-                Ok(element) => &self[element],
-                Err(_) => Sealed::panic_msg(self.len(), err),
+            let err = IndexSealed::copy(&idx.0);
+            match IntoIntIndex::index(idx.0) {
+                Ok(element) => &self[<T::Index as Same<_>>::identity(element)],
+                Err(_) => IndexSealed::panic_msg(self.len(), err),
             }
         }
     }
 
     impl<T, U> core::ops::IndexMut<IntIndex<T>> for [U]
     where 
-        T: IntSliceIndex<[U]> + Sealed,
+        T: IntSliceIndex<[U]> + IndexSealed,
     {
         fn index_mut(&mut self, idx: IntIndex<T>) -> &mut Self::Output {
-            let err = Sealed::copy(&idx.0);
+            let err = IndexSealed::copy(&idx.0);
             let len = self.len();
-            match IntSliceIndex::index(idx.0) {
-                Ok(element) => &mut self[element],
-                Err(_) => Sealed::panic_msg(len, err),
+            match IntoIntIndex::index(idx.0) {
+                Ok(element) => &mut self[<T::Index as Same<_>>::identity(element)],
+                Err(_) => IndexSealed::panic_msg(len, err),
             }
         }
     }
 }
 
-pub trait IntSliceIndex<T: ?Sized> {
-    type Index: SliceIndex<T>;
-    fn index(self) -> Result<Self::Index, TryFromIntError>;
+pub trait IntSliceIndex<T: ?Sized>: sealed::IntoIntIndex {
+    type Index: SliceIndex<T> + sealed::Same<<Self as sealed::IntoIntIndex>::IntoIndex>;
 }
 
 /// An extension trait allowing slices to be indexed by everything convertible to `usize`.
@@ -159,13 +186,17 @@ pub trait IntIndex {
         T: IntSliceIndex<Self>;
 }
 
+use sealed::Same;
+
 impl<U> IntIndex for [U] {
     fn get_int<T>(&self, idx: T)
         -> Option<&'_ <T::Index as SliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>,
     {
-        self.get(IntSliceIndex::index(idx).ok()?)
+        let idx: T::IntoIndex = idx.index().ok()?;
+        let idx: T::Index = Same::identity(idx);
+        self.get(idx)
     }
 
     fn get_int_mut<T>(&mut self, idx: T)
@@ -173,7 +204,66 @@ impl<U> IntIndex for [U] {
     where
         T: IntSliceIndex<Self>,
     {
-        self.get_mut(IntSliceIndex::index(idx).ok()?)
+        let idx: T::IntoIndex = idx.index().ok()?;
+        let idx: T::Index = Same::identity(idx);
+        self.get_mut(idx)
+    }
+}
+
+impl IntIndex for str {
+    fn get_int<T>(&self, idx: T)
+        -> Option<&'_ <T::Index as SliceIndex<Self>>::Output>
+    where
+        T: IntSliceIndex<Self>,
+    {
+        let idx: T::IntoIndex = idx.index().ok()?;
+        let idx: T::Index = Same::identity(idx);
+        self.get(idx)
+    }
+
+    fn get_int_mut<T>(&mut self, idx: T)
+        -> Option<&'_ mut <T::Index as SliceIndex<Self>>::Output>
+    where
+        T: IntSliceIndex<Self>,
+    {
+        let idx: T::IntoIndex = idx.index().ok()?;
+        let idx: T::Index = Same::identity(idx);
+        self.get_mut(idx)
+    }
+}
+
+impl<T: TryInto<usize>> sealed::IntoIntIndex for Range<T>
+where
+    TryFromIntError: From<T::Error>,
+{
+    type IntoIndex = Range<usize>;
+    fn index(self) -> Result<Range<usize>, TryFromIntError> {
+        let Range { start, end } = self;
+        let start: usize = start.try_into()?;
+        let end: usize = end.try_into()?;
+        Ok(start..end)
+    }
+}
+
+impl<T: TryInto<usize>> sealed::IntoIntIndex for RangeTo<T>
+where
+    TryFromIntError: From<T::Error>,
+{
+    type IntoIndex = RangeTo<usize>;
+    fn index(self) -> Result<RangeTo<usize>, TryFromIntError> {
+        let end: usize = self.end.try_into()?;
+        Ok(..end)
+    }
+}
+
+impl<T: TryInto<usize>> sealed::IntoIntIndex for RangeFrom<T>
+where
+    TryFromIntError: From<T::Error>,
+{
+    type IntoIndex = RangeFrom<usize>;
+    fn index(self) -> Result<RangeFrom<usize>, TryFromIntError> {
+        let start: usize = self.start.try_into()?;
+        Ok(start..)
     }
 }
 
@@ -182,40 +272,42 @@ macro_rules! slice_index {
     $(slice_index!(@$t);)*
 };
 (@$t:ty) => {
-    impl<U> IntSliceIndex<[U]> for $t {
-        type Index = usize;
+    impl sealed::IntoIntIndex for $t {
+        type IntoIndex = usize;
         fn index(self) -> Result<usize, TryFromIntError> {
             Ok(self.try_into()?)
         }
     }
+
+    impl<U> IntSliceIndex<[U]> for $t {
+        type Index = usize;
+    }
     
     impl<U> IntSliceIndex<[U]> for Range<$t> {
         type Index = Range<usize>;
-        fn index(self) -> Result<Self::Index, TryFromIntError> {
-            let Range { start, end } = self;
-            let start: usize = start.try_into()?;
-            let end: usize = end.try_into()?;
-            Ok(start..end)
-        }
     }
     
     impl<U> IntSliceIndex<[U]> for RangeTo<$t> {
         type Index = RangeTo<usize>;
-        fn index(self) -> Result<Self::Index, TryFromIntError> {
-            let end: usize = self.end.try_into()?;
-            Ok(..end)
-        }
     }
     
     impl<U> IntSliceIndex<[U]> for RangeFrom<$t> {
         type Index = RangeFrom<usize>;
-        fn index(self) -> Result<Self::Index, TryFromIntError> {
-            let start: usize = self.start.try_into()?;
-            Ok(start..)
-        }
+    }
+    
+    impl IntSliceIndex<str> for Range<$t> {
+        type Index = Range<usize>;
+    }
+    
+    impl IntSliceIndex<str> for RangeTo<$t> {
+        type Index = RangeTo<usize>;
+    }
+    
+    impl IntSliceIndex<str> for RangeFrom<$t> {
+        type Index = RangeFrom<usize>;
     }
 
-    impl sealed::Sealed for $t {
+    impl sealed::IndexSealed for $t {
         #[inline(always)]
         fn copy(&self) -> Self { *self }
         #[cold]
@@ -224,7 +316,7 @@ macro_rules! slice_index {
         }
     }
 
-    impl sealed::Sealed for Range<$t> {
+    impl sealed::IndexSealed for Range<$t> {
         #[inline(always)]
         fn copy(&self) -> Self { Range { .. *self } }
         #[cold]
@@ -233,7 +325,7 @@ macro_rules! slice_index {
         }
     }
 
-    impl sealed::Sealed for RangeFrom<$t> {
+    impl sealed::IndexSealed for RangeFrom<$t> {
         #[inline(always)]
         fn copy(&self) -> Self { RangeFrom { .. *self } }
         #[cold]
@@ -242,7 +334,7 @@ macro_rules! slice_index {
         }
     }
 
-    impl sealed::Sealed for RangeTo<$t> {
+    impl sealed::IndexSealed for RangeTo<$t> {
         #[inline(always)]
         fn copy(&self) -> Self { RangeTo { .. *self } }
         #[cold]
@@ -314,5 +406,11 @@ mod test {
         assert_slice_success!(slice: 10u8.., 10i8.., 10u16.., 10i16.., 10u32.., 10i32.., 10u64.., 10i64..);
 
         assert_slice_fail!(slice: -1i8, -1i16, -1i32, -1i64);
+    }
+
+    #[test]
+    fn str_indices() {
+        let text = "What if ascii still has it?";
+        assert_eq!(text.get_int(8u8..13), Some("ascii"));
     }
 }
