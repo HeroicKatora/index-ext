@@ -178,10 +178,10 @@ impl<U> IntIndex for [U] {
 }
 
 macro_rules! slice_index { 
-($($t:ty,)*) => {
-    $(slice_index!($t);)*
+($($t:ty),*) => {
+    $(slice_index!(@$t);)*
 };
-($t:ty) => {
+(@$t:ty) => {
     impl<U> IntSliceIndex<[U]> for $t {
         type Index = usize;
         fn index(self) -> Result<usize, TryFromIntError> {
@@ -252,9 +252,67 @@ macro_rules! slice_index {
     }
 } }
 
-slice_index!(u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, usize, isize,);
+slice_index!(u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, usize, isize);
 
 #[allow(non_snake_case)]
 pub fn IntIndex<T>(idx: T) -> idx::IntIndex<T> {
     idx::IntIndex(idx)
+}
+
+#[cfg(test)]
+mod test {
+    use super::IntIndex;
+
+    #[test]
+    #[should_panic = "100"]
+    fn panics_with_length_u32() {
+        [0u8; 0][IntIndex(100u32)];
+    }
+
+    #[test]
+    #[should_panic = "100"]
+    fn panics_with_length_u8() {
+        [0u8; 0][IntIndex(100u8)];
+    }
+
+    #[test]
+    #[should_panic = "-1"]
+    fn panics_with_length_i8() {
+        [0u8; 0][IntIndex(-1i8)];
+    }
+
+    #[test]
+    #[should_panic = "100000000000000000000000000000000000000"]
+    fn panics_with_length_u128() {
+        [0u8; 0][IntIndex(100000000000000000000000000000000000000u128)];
+    }
+
+    #[test]
+    fn index_with_all() {
+        let slice = [0u8; 10];
+        macro_rules! assert_slice_success {
+            (@$slice:path, $exp:expr) => {
+                assert!($slice.get_int($exp).is_some());
+            };
+            ($slice:path: $($exp:expr),*) => {
+                $(assert_slice_success!(@$slice, $exp);)*
+            }
+        }
+
+        macro_rules! assert_slice_fail {
+            (@$slice:path, $exp:expr) => {
+                assert_eq!($slice.get_int($exp), None);
+            };
+            ($slice:path: $($exp:expr),*) => {
+                $(assert_slice_fail!(@$slice, $exp);)*
+            }
+        }
+
+        assert_slice_success!(slice: 0u8, 0i8, 0u16, 0i16, 0u32, 0i32, 0u64, 0i64);
+        assert_slice_success!(slice: ..10u8, ..10i8, ..10u16, ..10i16, ..10u32, ..10i32, ..10u64, ..10i64);
+        assert_slice_success!(slice: 0..10u8, 0..10i8, 0..10u16, 0..10i16, 0..10u32, 0..10i32, 0..10u64, 0..10i64);
+        assert_slice_success!(slice: 10u8.., 10i8.., 10u16.., 10i16.., 10u32.., 10i32.., 10u64.., 10i64..);
+
+        assert_slice_fail!(slice: -1i8, -1i16, -1i32, -1i64);
+    }
 }
