@@ -18,6 +18,47 @@
 //!
 //! assert_eq!([0u8; 2].get_int(u128::max_value()), None);
 //! ```
+//!
+//! ## Unfinished features
+//!
+//! The marker WIP means it is worked on, Planned that it will be worked on, and Idea that it is
+//! still unevaluated but might be interesting.
+//!
+//! [Planned]: An index type `CharAt(n: usize)` that dereferences to the characters of a string at
+//! a particular position, represented by a string wrapper that allows converting into a `char`.
+//! Note that a generic `Chars` would not be constant time which may be surprising if used in index
+//! position.
+//!
+//! [Planned]: An index type `InsertWith` for `HashMap` and `BTreeMap` that will construct an
+//! element when an entry is missing, similar to C++, and thus be a panic free alternative. _Maybe_
+//! we could index a `Vec<_>` with this type as well, extending as necessary, but this would again
+//! not be constant time.
+//!
+//! [Idea]: An adapter `OrEmpty` that uses `get` internally and substitutes an empty slice instead
+//! of panicking.
+//!
+//! ## Design notes
+//!
+//! The extension traits offered here have a slight ergonomic problem compared to being included in
+//! the standard library. Its `ops::Index` impls on slices are provided by the `SliceIndex` trait.
+//! Since this is a nightly trait _and_ sealed by design we can not use it. However, we also can
+//! not use a generic impl for all `T: crate::SliceIndex<[U]>` as this is forbidden by coherence
+//! rules for foreign types. We thus utilize two kinds of indexing: Implement the Index trait
+//! directly for all concrete applicable types and provide a single newtype which acts as a proxy
+//! for the otherwise unconstrained type parameter of the generic impl. If the types were added to
+//! `core` then this indirection would not be necessary and ergonomics would improve.
+//!
+//! ## Nightly features
+//! 
+//! [WIP]: const generics enabled index types that return arrays `[T; N]` instead of slices. Due to
+//! recent advances in parameter deduction, the length parameter need not even be named.
+//!
+//! ```ignore
+//! // Grab an array of three element from a slice.
+//! let [r, g, b] = &slice[RangeTo];
+//! ```
+//!
+//! [WIP]: 
 #![no_std]
 use core::convert::TryInto;
 use core::num::TryFromIntError;
@@ -25,6 +66,7 @@ use core::ops::{Range, RangeFrom, RangeTo};
 use core::slice::SliceIndex;
 
 pub(crate) mod sealed {
+    use core::slice::SliceIndex;
     use core::num::TryFromIntError;
 
     /// Using the actual ops::Index relies on this sealed trait.
@@ -54,6 +96,14 @@ pub(crate) mod sealed {
         fn index(self) -> Result<Self::IntoIndex, TryFromIntError>;
     }
 
+    /// Defines actual indexing on a potentially unsized type.
+    ///
+    /// This is sealed as well, as it contains the otherwise exposed `Index` item whose bounds we
+    /// may later want to adjust.
+    pub trait IntSliceIndex<T: ?Sized>: IntoIntIndex {
+        type Index: SliceIndex<T> + Same<<Self as IntoIntIndex>::IntoIndex>;
+    }
+
     pub trait Same<T> {
         fn identity(this: T) -> Self;
     }
@@ -68,7 +118,7 @@ pub mod idx {
     use core::num::TryFromIntError;
     use core::slice::SliceIndex;
 
-    use super::{sealed::{IndexSealed, IntoIntIndex, Same}, IntSliceIndex};
+    use super::sealed::{IndexSealed, IntoIntIndex, Same, IntSliceIndex};
 
     /// An indexing adaptor for `TryInto`.
     ///
@@ -102,6 +152,12 @@ pub mod idx {
     {
         type Index = usize;
     }
+
+    impl<T, U> super::IntSliceIndex<[U]> for TryIndex<T>
+    where
+        T: TryInto<usize>,
+        T::Error: Into<TryFromIntError>,
+    {}
 
     impl<T, U> core::ops::Index<TryIndex<T>> for [U]
     where 
@@ -141,7 +197,7 @@ pub mod idx {
 
     impl<T, U> core::ops::Index<IntIndex<T>> for [U]
     where 
-        T: IntSliceIndex<[U]> + IndexSealed,
+        T: super::IntSliceIndex<[U]> + IndexSealed,
     {
         type Output = <T::Index as SliceIndex<[U]>>::Output;
 
@@ -156,7 +212,7 @@ pub mod idx {
 
     impl<T, U> core::ops::IndexMut<IntIndex<T>> for [U]
     where 
-        T: IntSliceIndex<[U]> + IndexSealed,
+        T: super::IntSliceIndex<[U]> + IndexSealed,
     {
         fn index_mut(&mut self, idx: IntIndex<T>) -> &mut Self::Output {
             let err = IndexSealed::copy(&idx.0);
@@ -169,9 +225,7 @@ pub mod idx {
     }
 }
 
-pub trait IntSliceIndex<T: ?Sized>: sealed::IntoIntIndex {
-    type Index: SliceIndex<T> + sealed::Same<<Self as sealed::IntoIntIndex>::IntoIndex>;
-}
+pub trait IntSliceIndex<T: ?Sized>: sealed::IntSliceIndex<T> { }
 
 /// An extension trait allowing slices to be indexed by everything convertible to `usize`.
 pub trait IntIndex {
@@ -279,33 +333,40 @@ macro_rules! slice_index {
         }
     }
 
-    impl<U> IntSliceIndex<[U]> for $t {
+    impl<U> sealed::IntSliceIndex<[U]> for $t {
         type Index = usize;
     }
+    impl<U> IntSliceIndex<[U]> for $t {}
     
-    impl<U> IntSliceIndex<[U]> for Range<$t> {
+    impl<U> sealed::IntSliceIndex<[U]> for Range<$t> {
         type Index = Range<usize>;
     }
+    impl<U> IntSliceIndex<[U]> for Range<$t> {}
     
-    impl<U> IntSliceIndex<[U]> for RangeTo<$t> {
+    impl<U> sealed::IntSliceIndex<[U]> for RangeTo<$t> {
         type Index = RangeTo<usize>;
     }
+    impl<U> IntSliceIndex<[U]> for RangeTo<$t> {}
     
-    impl<U> IntSliceIndex<[U]> for RangeFrom<$t> {
+    impl<U> sealed::IntSliceIndex<[U]> for RangeFrom<$t> {
         type Index = RangeFrom<usize>;
     }
+    impl<U> IntSliceIndex<[U]> for RangeFrom<$t> {}
     
-    impl IntSliceIndex<str> for Range<$t> {
+    impl sealed::IntSliceIndex<str> for Range<$t> {
         type Index = Range<usize>;
     }
+    impl IntSliceIndex<str> for Range<$t> {}
     
-    impl IntSliceIndex<str> for RangeTo<$t> {
+    impl sealed::IntSliceIndex<str> for RangeTo<$t> {
         type Index = RangeTo<usize>;
     }
+    impl IntSliceIndex<str> for RangeTo<$t> {}
     
-    impl IntSliceIndex<str> for RangeFrom<$t> {
+    impl sealed::IntSliceIndex<str> for RangeFrom<$t> {
         type Index = RangeFrom<usize>;
     }
+    impl IntSliceIndex<str> for RangeFrom<$t> {}
 
     impl sealed::IndexSealed for $t {
         #[inline(always)]
