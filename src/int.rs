@@ -106,6 +106,7 @@ pub(crate) mod sealed {
 /// over this type means that our impls are only generic for `TryIndex<T>` instead and do not
 /// overlap.
 #[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TryIndex<T>(pub T);
 
 impl<T> TryIndex<T>
@@ -193,10 +194,23 @@ where
     }
 }
 
-/// An adaptor for `ops::Index` that uses this crate's `IntIndex` instead of the standard one.
+/// An adaptor for `ops::Index` that uses this crate's `IntSliceIndex` instead of the standard one.
+///
+/// This struct can be used to index a slice with an arbitrary integer type, using the standard
+/// indexing syntax. It is also constructed by the [`Int`] method exported in the crate root. The
+/// indexing operation will first try to convert the number of a `usize` index and then do the
+/// usual indexing.
+///
+/// [`Int`]: ../fn.Int.html
+///
+/// ```rust
+/// use index_ext::int::Int;
+/// let val = [0u8; 2][Int(1u32)];
+/// ```
 ///
 /// This is a transparent wrapper.
 #[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Int<T>(pub T);
 
 impl<T, U> core::ops::Index<Int<T>> for [U]
