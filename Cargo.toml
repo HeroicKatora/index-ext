@@ -5,3 +5,7 @@ authors = ["Andreas Molzer <andreas.molzer@gmx.de>"]
 edition = "2018"
 
 [dependencies]
+
+[features]
+# Activate some additional operations that require nightly
+nightly = []

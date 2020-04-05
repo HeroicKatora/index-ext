@@ -60,10 +60,15 @@
 //!
 //! [WIP]: 
 #![no_std]
+#![cfg_attr(feature = "nightly", feature(const_generics))]
+
 use core::convert::TryInto;
 use core::num::TryFromIntError;
 use core::ops::{Range, RangeFrom, RangeTo};
 use core::slice::SliceIndex;
+
+#[cfg(feature = "nightly")]
+mod const_;
 
 pub(crate) mod sealed {
     use core::slice::SliceIndex;
@@ -78,6 +83,7 @@ pub(crate) mod sealed {
     /// not exposing this we can always relax this later when, and if, specialization becomes
     /// available to stable Rust.
     pub trait IndexSealed {
+        /// Punts the `Copy` bound to the implementor.
         fn copy(&self) -> Self;
         #[cold]
         fn panic_msg(limit: usize, idx: Self) -> !;
