@@ -6,34 +6,36 @@ use core::ops::{Index, IndexMut};
 /// right hand side array pattern.
 ///
 /// ```
-/// # let buf = &[0u8, 3][..];
-/// let [r, g, b] = &buf[RangeTo];
+/// use index_ext::RangeTo;
+/// # let buf = &[0u8; 3][..];
+/// let [r, g, b] = buf[RangeTo];
 /// ```
 pub struct RangeTo<const N: usize>;
 
-type Prefix<const N: usize> = RangeTo<N>;
+/// An alias for `RangeTo` which may sometimes be more expressive.
+pub type Prefix<const N: usize> = RangeTo<N>;
 
-impl<T, const N: usize> Index<[T]> for RangeTo<N> {
+impl<T, const N: usize> Index<RangeTo<N>> for [T] {
     type Output = [T; N];
-    fn index(&self) -> &[T; N] {
+    fn index(&self, _: RangeTo<{N}>) -> &[T; N] {
         let slice = &self[..N];
         unsafe {
             // SAFETY: the layout of slices and arrays of the same length are the same. We'd like
             // to use TryFrom/TryInto here but that currently would require the relaxed bounds on
             // array impls.
-            &*(slice as *const T as *const [T; N])
+            &*(slice.as_ptr() as *const [T; N])
         }
     }
 }
 
-impl<T, const N: usize> IndexMut<[T]> for RangeTo<N> {
-    fn index_mut(&mut self) -> &mut [T; N] {
+impl<T, const N: usize> IndexMut<RangeTo<N>> for [T] {
+    fn index_mut(&mut self, _: RangeTo<{N}>) -> &mut [T; N] {
         let slice = &mut self[..N];
         unsafe {
             // SAFETY: the layout of slices and arrays of the same length are the same. We'd like
             // to use TryFrom/TryInto here but that currently would require the relaxed bounds on
             // array impls.
-            &mut *(slice as *mut T as *mut [T; N])
+            &mut *(slice.as_mut_ptr() as *mut [T; N])
         }
     }
 }

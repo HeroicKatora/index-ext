@@ -50,10 +50,14 @@
 //!
 //! ## Nightly features
 //! 
-//! [WIP]: const generics enabled index types that return arrays `[T; N]` instead of slices. Due to
-//! recent advances in parameter deduction, the length parameter need not even be named.
+//! * The `RangeTo` type is a const generics enabled index that return arrays `[T; N]` instead of
+//! slices. Due to recent advances in parameter deduction, the length parameter need not even be
+//! named.
 //!
-//! ```ignore
+#![cfg_attr(feature = "nightly", doc = "```")]
+#![cfg_attr(not(feature = "nightly"), doc = "```ignore")]
+//! # let slice = [0; 3];
+//! use index_ext::RangeTo;
 //! // Grab an array of three element from a slice.
 //! let [r, g, b] = &slice[RangeTo];
 //! ```
@@ -67,6 +71,9 @@ use core::slice::SliceIndex;
 #[cfg(feature = "nightly")]
 mod const_;
 pub mod int;
+
+#[cfg(feature = "nightly")]
+pub use const_::{RangeTo, Prefix};
 
 pub(crate) mod sealed {
     pub trait Same<T> {
