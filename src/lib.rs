@@ -106,6 +106,16 @@ pub trait Int: sealed::Sealed {
         -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>;
+
+    unsafe fn get_int_unchecked<T>(&self, idx: T)
+        -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
+    where
+        T: IntSliceIndex<Self>;
+
+    unsafe fn get_int_unchecked_mut<T>(&mut self, idx: T)
+        -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
+    where
+        T: IntSliceIndex<Self>;
 }
 
 impl<U> sealed::Sealed for [U] {}
@@ -126,6 +136,22 @@ impl<U> Int for [U] {
     {
         <T as int::sealed::IntSliceIndex<Self>>::get_mut(idx, self)
     }
+
+    unsafe fn get_int_unchecked<T>(&self, idx: T)
+        -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
+    where
+        T: IntSliceIndex<Self>,
+    {
+        <T as int::sealed::IntSliceIndex<Self>>::get_unchecked(idx, self)
+    }
+
+    unsafe fn get_int_unchecked_mut<T>(&mut self, idx: T)
+        -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
+    where
+        T: IntSliceIndex<Self>,
+    {
+        <T as int::sealed::IntSliceIndex<Self>>::get_unchecked_mut(idx, self)
+    }
 }
 
 impl sealed::Sealed for str {}
@@ -145,6 +171,22 @@ impl Int for str {
         T: IntSliceIndex<Self>,
     {
         <T as int::sealed::IntSliceIndex<Self>>::get_mut(idx, self)
+    }
+
+    unsafe fn get_int_unchecked<T>(&self, idx: T)
+        -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
+    where
+        T: IntSliceIndex<Self>,
+    {
+        <T as int::sealed::IntSliceIndex<Self>>::get_unchecked(idx, self)
+    }
+
+    unsafe fn get_int_unchecked_mut<T>(&mut self, idx: T)
+        -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
+    where
+        T: IntSliceIndex<Self>,
+    {
+        <T as int::sealed::IntSliceIndex<Self>>::get_unchecked_mut(idx, self)
     }
 }
 
@@ -208,6 +250,28 @@ mod test {
         assert_slice_success!(slice: 10u8.., 10i8.., 10u16.., 10i16.., 10u32.., 10i32.., 10u64.., 10i64..);
 
         assert_slice_fail!(slice: -1i8, -1i16, -1i32, -1i64);
+    }
+    
+    #[test]
+    fn unchecked() {
+        let mut slice = [0u8, 1, 2, 3];
+        macro_rules! assert_slice_eq {
+            (@$slice:path, $idx:expr, $exp:expr) => {
+                assert_eq!($slice[Int($idx)], $exp);
+                assert_eq!(&mut $slice[Int($idx)], $exp);
+
+                unsafe {
+                    assert_eq!($slice.get_int_unchecked($idx), $exp);
+                    assert_eq!($slice.get_int_unchecked_mut($idx), $exp);
+                }
+            };
+            ($slice:path[idx], $result:expr, for idx in [$($idx:expr),*]) => {
+                $(assert_slice_eq!(@$slice, $idx, $result);)*
+            }
+        };
+
+        assert_slice_eq!(slice[idx], [1, 2],
+            for idx in [1u8..3, 1i8..3, 1u16..3, 1i16..3, 1u32..3, 1i32..3, 1u64..3, 1i64..3]);
     }
 
     #[test]
