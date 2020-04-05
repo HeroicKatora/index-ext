@@ -11,10 +11,10 @@
 //! the same name, for both panicking and fallible accessors).
 //!
 //! ```
-//! use index_ext::IntIndex;
+//! use index_ext::Int;
 //!
-//! let fine = [0u8; 2][IntIndex(1u32)];
-//! let also = [0u8; 2][IntIndex(1u128)];
+//! let fine = [0u8; 2][Int(1u32)];
+//! let also = [0u8; 2][Int(1u128)];
 //!
 //! assert_eq!([0u8; 2].get_int(u128::max_value()), None);
 //! ```
@@ -29,7 +29,7 @@
 //! Note that a generic `Chars` would not be constant time which may be surprising if used in index
 //! position.
 //!
-//! [Planned]: An index type `InsertWith` for `HashMap` and `BTreeMap` that will construct an
+//! [Idea]: An index type `InsertWith` for `HashMap` and `BTreeMap` that will construct an
 //! element when an entry is missing, similar to C++, and thus be a panic free alternative. _Maybe_
 //! we could index a `Vec<_>` with this type as well, extending as necessary, but this would again
 //! not be constant time.
@@ -66,7 +66,12 @@
 #![no_std]
 #![cfg_attr(feature = "nightly", feature(const_generics))]
 
-use core::slice::SliceIndex;
+mod sealed {
+    /// Seals the `Int` extension trait.
+    /// The methods added there are intended to be like inherent methods on the respective
+    /// implementors which means additional implementors are not intended.
+    pub trait Sealed {}
+}
 
 #[cfg(feature = "nightly")]
 mod const_;
@@ -75,111 +80,105 @@ pub mod int;
 #[cfg(feature = "nightly")]
 pub use const_::{RangeTo, Prefix};
 
-pub(crate) mod sealed {
-    pub trait Same<T> {
-        fn identity(this: T) -> Self;
-    }
-
-    impl<T> Same<T> for T {
-        fn identity(this: T) -> T { this }
-    }
-}
-
-pub mod idx {
-}
-
-pub trait IntSliceIndex<T: ?Sized>: int::sealed::IntSliceIndex<T> { }
+/// A trait for integer based indices.
+///
+/// Any integer can be used as a fallible index where a machine word can be used by first trying to
+/// convert it into a `usize` and then indexing with the original method. From the point of the
+/// user, the effect is not much different. If `10usize` is out-of-bounds then so is any other
+/// integer representing the number `10`, no matter the allowed magnitude of its type. The same
+/// holds for integers that permit negative indices.
+///
+/// The output type of the indexing operation is an element or a slice respectively.
+///
+/// This trait enables the generic [`Int::get_int`] method.
+///
+/// [`Int::get_int`]: trait.Int.html#fn.get_int
+pub trait IntSliceIndex<T: ?Sized>: int::sealed::SealedSliceIndex<T> { }
 
 /// An extension trait allowing slices to be indexed by everything convertible to `usize`.
-pub trait IntIndex {
+pub trait Int: sealed::Sealed {
     fn get_int<T>(&self, idx: T)
-        -> Option<&'_ <T::Index as SliceIndex<Self>>::Output>
+        -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>;
 
     fn get_int_mut<T>(&mut self, idx: T)
-        -> Option<&'_ mut <T::Index as SliceIndex<Self>>::Output>
+        -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>;
 }
 
-use sealed::Same;
+impl<U> sealed::Sealed for [U] {}
 
-impl<U> IntIndex for [U] {
+impl<U> Int for [U] {
     fn get_int<T>(&self, idx: T)
-        -> Option<&'_ <T::Index as SliceIndex<Self>>::Output>
+        -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>,
     {
-        let idx: T::IntoIndex = idx.index().ok()?;
-        let idx: T::Index = Same::identity(idx);
-        self.get(idx)
+        <T as int::sealed::IntSliceIndex<Self>>::get(idx, self)
     }
 
     fn get_int_mut<T>(&mut self, idx: T)
-        -> Option<&'_ mut <T::Index as SliceIndex<Self>>::Output>
+        -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>,
     {
-        let idx: T::IntoIndex = idx.index().ok()?;
-        let idx: T::Index = Same::identity(idx);
-        self.get_mut(idx)
+        <T as int::sealed::IntSliceIndex<Self>>::get_mut(idx, self)
     }
 }
 
-impl IntIndex for str {
+impl sealed::Sealed for str {}
+
+impl Int for str {
     fn get_int<T>(&self, idx: T)
-        -> Option<&'_ <T::Index as SliceIndex<Self>>::Output>
+        -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>,
     {
-        let idx: T::IntoIndex = idx.index().ok()?;
-        let idx: T::Index = Same::identity(idx);
-        self.get(idx)
+        <T as int::sealed::IntSliceIndex<Self>>::get(idx, self)
     }
 
     fn get_int_mut<T>(&mut self, idx: T)
-        -> Option<&'_ mut <T::Index as SliceIndex<Self>>::Output>
+        -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>,
     {
-        let idx: T::IntoIndex = idx.index().ok()?;
-        let idx: T::Index = Same::identity(idx);
-        self.get_mut(idx)
+        <T as int::sealed::IntSliceIndex<Self>>::get_mut(idx, self)
     }
 }
 
 #[allow(non_snake_case)]
-pub fn IntIndex<T>(idx: T) -> int::IntIndex<T> {
-    int::IntIndex(idx)
+pub fn Int<T>(idx: T) -> int::Int<T> {
+    int::Int(idx)
 }
 
 #[cfg(test)]
 mod test {
-    use super::IntIndex;
+    use super::Int;
 
     #[test]
     #[should_panic = "100"]
     fn panics_with_length_u32() {
-        [0u8; 0][IntIndex(100u32)];
+        [0u8; 0][Int(100u32)];
     }
 
     #[test]
     #[should_panic = "100"]
     fn panics_with_length_u8() {
-        [0u8; 0][IntIndex(100u8)];
+        [0u8; 0][Int(100u8)];
     }
 
     #[test]
     #[should_panic = "-1"]
     fn panics_with_length_i8() {
-        [0u8; 0][IntIndex(-1i8)];
+        [0u8; 0][Int(-1i8)];
     }
 
     #[test]
     #[should_panic = "100000000000000000000000000000000000000"]
     fn panics_with_length_u128() {
-        [0u8; 0][IntIndex(100000000000000000000000000000000000000u128)];
+        [0u8; 0][Int(100000000000000000000000000000000000000u128)];
     }
 
     #[test]
