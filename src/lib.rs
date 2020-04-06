@@ -19,6 +19,20 @@
 //! assert_eq!([0u8; 2].get_int(u128::max_value()), None);
 //! ```
 //!
+//! ## Nightly features
+//!
+//! * The `RangeTo` type is a const generics enabled index that return arrays `[T; N]` instead of
+//! slices. Due to recent advances in parameter deduction, the length parameter need not even be
+//! named.
+//!
+#![cfg_attr(feature = "nightly", doc = "```")]
+#![cfg_attr(not(feature = "nightly"), doc = "```ignore")]
+//! # let slice = [0; 3];
+//! use index_ext::RangeTo;
+//! // Grab an array of three element from a slice.
+//! let [r, g, b] = &slice[RangeTo];
+//! ```
+//!
 //! ## Unfinished features
 //!
 //! The marker WIP means it is worked on, Planned that it will be worked on, and Idea that it is
@@ -47,22 +61,6 @@
 //! directly for all concrete applicable types and provide a single newtype which acts as a proxy
 //! for the otherwise unconstrained type parameter of the generic impl. If the types were added to
 //! `core` then this indirection would not be necessary and ergonomics would improve.
-//!
-//! ## Nightly features
-//! 
-//! * The `RangeTo` type is a const generics enabled index that return arrays `[T; N]` instead of
-//! slices. Due to recent advances in parameter deduction, the length parameter need not even be
-//! named.
-//!
-#![cfg_attr(feature = "nightly", doc = "```")]
-#![cfg_attr(not(feature = "nightly"), doc = "```ignore")]
-//! # let slice = [0; 3];
-//! use index_ext::RangeTo;
-//! // Grab an array of three element from a slice.
-//! let [r, g, b] = &slice[RangeTo];
-//! ```
-//!
-//! [WIP]: 
 #![no_std]
 #![cfg_attr(feature = "nightly", feature(const_generics))]
 
@@ -74,7 +72,7 @@ mod sealed {
 }
 
 #[cfg(feature = "nightly")]
-mod const_;
+pub mod array;
 pub mod int;
 
 #[cfg(feature = "nightly")]
@@ -159,7 +157,7 @@ pub trait Int: sealed::Sealed {
     /// ```
     /// # use index_ext::Int;
     /// let x = &[1, 2, 4];
-    /// 
+    ///
     /// unsafe {
     ///     assert_eq!(x.get_int_unchecked(1i8), &2);
     /// }
@@ -181,7 +179,7 @@ pub trait Int: sealed::Sealed {
     /// ```
     /// # use index_ext::Int;
     /// let x = &mut [1, 2, 4];
-    /// 
+    ///
     /// unsafe {
     ///     let elem = x.get_int_unchecked_mut(1u64);
     ///     *elem = 13;
@@ -334,7 +332,7 @@ mod test {
 
         assert_slice_fail!(slice: -1i8, -1i16, -1i32, -1i64);
     }
-    
+
     #[test]
     fn unchecked() {
         let mut slice = [0u8, 1, 2, 3];

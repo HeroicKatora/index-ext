@@ -1,4 +1,23 @@
-use core::ops::{Index, IndexMut};
+//! Index types that produce arrays.
+//!
+//! The default rust index types, that is `usize` and those constructed with special range syntax,
+//! produce slices. That's not necessarily bad as designing them with `const` in mind would have
+//! delay their introduction and have problems of coherency. The ergonomic overhead however muddles
+//! the intent and requires writing a never failing, but semantically fallible conversion.
+//!
+//! With the introduction of `const` generic parameters we can design a better solution with which
+//! the length of the range is statically determined and which consequently can return a proper
+//! array reference instead of a dynamically sized slice. Even better, as this happens in the type
+//! system, some parameter values can be deduced where the compiler can match with another array
+//! type!
+//!
+//! Having to decide on the length introduces new complications that are usually put off to the
+//! actual execution of indexing. If the given indices are inconsistent, i.e. the end is smaller
+//! than the start or the end of an inclusive range is the maximum possible index, then there is no
+//! possible type to represent the output.
+//!
+//! [TODO]
+use core::ops::{Bound, Index, IndexMut, RangeBounds};
 
 /// A marker struct for statically sized range to (`..n`).
 ///
