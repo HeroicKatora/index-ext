@@ -269,6 +269,10 @@ impl Int for str {
     }
 }
 
+/// Convert an arbitrary integer into an index.
+///
+/// This method simply constructs an inner transparent wrapper struct `Int` but can be used as an
+/// alternative which is imported with the same name, and at the same time, as the trait.
 #[allow(non_snake_case)]
 pub fn Int<T>(idx: T) -> int::Int<T> {
     int::Int(idx)

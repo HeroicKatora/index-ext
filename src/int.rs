@@ -1,3 +1,17 @@
+/// Defines helper types for more integer indices.
+///
+/// There are helpers for adapting indices to implement the standard `ops::Index`/`ops::IndexMut`
+/// or the crate-wide [`IntSliceIndex`] respectively.
+///
+/// * [`TryIndex`] uses `TryInto<usize>` to convert an type into an index, slightly making them
+///   more convenient to use where the error conditions have been checked through external means or
+///   where such panicking is permissible.
+/// * [`Int`] wraps an implementor of [`IntSliceIndex`] to turn it into an implementor of
+///   `ops::Index` and `ops::IndexMut` as well.
+///
+/// [`Int`]: struct.Int.html
+/// [`IntSliceIndex`]: ../trait.IntSliceIndex.html
+/// [`TryIndex`]: struct.TryIndex.html
 use core::ops::{Range, RangeTo, RangeFrom};
 use core::hint::unreachable_unchecked;
 use core::convert::TryInto;
@@ -117,7 +131,7 @@ where
     fn as_int_index(self) -> usize {
         match self.0.try_into() {
             Ok(idx) => idx,
-            Err(_) => panic!("Invalid index"),
+            Err(error) => panic!("Invalid index, {}", error.into()),
         }
     }
 }
