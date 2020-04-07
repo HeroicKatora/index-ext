@@ -27,7 +27,7 @@
 //!
 #![cfg_attr(feature = "nightly", doc = "```")]
 #![cfg_attr(not(feature = "nightly"), doc = "```ignore")]
-//! # let slice = [0; 3];
+//! # let slice = [0; 4];
 //! use index_ext::array::RangeTo;
 //! // Grab an array of three element from a slice.
 //! let [r, g, b] = &slice[RangeTo];
@@ -313,7 +313,7 @@ mod test {
     #[test]
     #[should_panic = "100000000000000000000000000000000000000"]
     fn panics_with_length_u128() {
-        [0u8; 0][Int(100000000000000000000000000000000000000u128)];
+        [0u8; 0][Int(100_000_000_000_000_000_000_000_000_000_000_000_000u128)];
     }
 
     #[test]

@@ -17,7 +17,7 @@ clean_task:
 
 clippy_task:
   container:
-    image: rust:nightly
+    image: rustlang/rust:nightly
   # Allowed to fail with missing clippy, or other issues by newly introduced
   # lints that would break API stability (which happens sometimes).
   allow_failures: true
