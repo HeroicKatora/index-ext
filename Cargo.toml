@@ -1,8 +1,17 @@
 [package]
 name = "index-ext"
+description = "Index slices with arbitrary ints and as arrays."
+license = "Unlicense"
 version = "0.0.1"
 authors = ["Andreas Molzer <andreas.molzer@gmx.de>"]
 edition = "2018"
+
+documentation = "https://docs.rs/index-ext"
+homepage = "https://github.com/HeroicKatora/index-ext"
+repository = "https://github.com/HeroicKatora/index-ext"
+
+categories = ["data-structures", "embedded", "no-std", "rust-patterns"]
+keywords = ["index", "extension", "int-index", "array-index"]
 
 [dependencies]
 

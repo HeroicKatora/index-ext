@@ -28,3 +28,9 @@ use index_ext::Prefix;
 let rgba = [0; 4];
 let [r, g, b] = &rgb[Prefix];
 ```
+
+## License
+
+If you require this, then this is distributed under the terms of the [Unlicense].
+
+[Unlicense]: UNLICENSE
