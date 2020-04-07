@@ -1,3 +1,6 @@
+use core::convert::TryInto;
+use core::hint::unreachable_unchecked;
+use core::num::TryFromIntError;
 /// Defines helper types for more integer indices.
 ///
 /// There are helpers for adapting indices to implement the standard `ops::Index`/`ops::IndexMut`
@@ -12,14 +15,11 @@
 /// [`Int`]: struct.Int.html
 /// [`IntSliceIndex`]: ../trait.IntSliceIndex.html
 /// [`TryIndex`]: struct.TryIndex.html
-use core::ops::{Range, RangeTo, RangeFrom};
-use core::hint::unreachable_unchecked;
-use core::convert::TryInto;
-use core::num::TryFromIntError;
+use core::ops::{Range, RangeFrom, RangeTo};
 use core::slice::SliceIndex;
 
-use super::IntSliceIndex;
 use self::sealed::{IndexSealed, IntoIntIndex};
+use super::IntSliceIndex;
 
 /// Sealed traits for making `Int` work as an index, without exposing too much.
 ///
@@ -31,7 +31,7 @@ use self::sealed::{IndexSealed, IntoIntIndex};
 /// So the `IntSliceIndex` is a parallel of `core::slice::SliceIndex` and inherited from the
 /// exposed `crate::IntSliceIndex`. It also contains the interface which we use internally. We
 /// can't define unstable methods, and methods would be inherited despite the hidden sealed trait.
-/// 
+///
 /// ```
 /// mod sealed {
 ///     pub trait Seal {
@@ -93,12 +93,24 @@ pub(crate) mod sealed {
     /// Hence, all methods provided here are actually unreachable.
     pub trait SealedSliceIndex<T: ?Sized>: IntSliceIndex<T> {
         type Output: ?Sized;
-        fn get(self, _: &T) -> ! { unreachable!() }
-        fn get_mut(self, _: &mut T) -> ! { unreachable!() }
-        unsafe fn get_unchecked(self, _: &T) -> ! { unreachable!() }
-        unsafe fn get_unchecked_mut(self, _: &mut T) -> ! { unreachable!() }
-        fn index(self, _: &T) -> ! { unreachable!() }
-        fn index_mut(self, _: &mut T) -> ! { unreachable!() }
+        fn get(self, _: &T) -> ! {
+            unreachable!()
+        }
+        fn get_mut(self, _: &mut T) -> ! {
+            unreachable!()
+        }
+        unsafe fn get_unchecked(self, _: &T) -> ! {
+            unreachable!()
+        }
+        unsafe fn get_unchecked_mut(self, _: &mut T) -> ! {
+            unreachable!()
+        }
+        fn index(self, _: &T) -> ! {
+            unreachable!()
+        }
+        fn index_mut(self, _: &mut T) -> ! {
+            unreachable!()
+        }
     }
 
     impl<U: ?Sized, T: IntSliceIndex<U>> SealedSliceIndex<U> for T {
@@ -128,7 +140,7 @@ where
     T: TryInto<usize>,
     T::Error: Into<TryFromIntError>,
 {
-    fn as_int_index(self) -> usize {
+    fn into_int_index(self) -> usize {
         match self.0.try_into() {
             Ok(idx) => idx,
             Err(error) => panic!("Invalid index, {}", error.into()),
@@ -167,17 +179,17 @@ where
     }
     unsafe fn get_unchecked(self, slice: &[U]) -> &Self::Output {
         // Explicitly do __NOT__ make the conversion itself unchecked.
-        slice.get_unchecked(self.as_int_index())
+        slice.get_unchecked(self.into_int_index())
     }
     unsafe fn get_unchecked_mut(self, slice: &mut [U]) -> &mut Self::Output {
         // Explicitly do __NOT__ make the conversion itself unchecked.
-        slice.get_unchecked_mut(self.as_int_index())
+        slice.get_unchecked_mut(self.into_int_index())
     }
     fn index(self, slice: &[U]) -> &Self::Output {
-        &slice[self.as_int_index()]
+        &slice[self.into_int_index()]
     }
     fn index_mut(self, slice: &mut [U]) -> &mut Self::Output {
-        &mut slice[self.as_int_index()]
+        &mut slice[self.into_int_index()]
     }
 }
 
@@ -185,10 +197,11 @@ impl<T, U> IntSliceIndex<[U]> for TryIndex<T>
 where
     T: TryInto<usize>,
     T::Error: Into<TryFromIntError>,
-{}
+{
+}
 
 impl<T, U> core::ops::Index<TryIndex<T>> for [U]
-where 
+where
     T: TryInto<usize> + IndexSealed,
     T::Error: Into<TryFromIntError>,
 {
@@ -199,7 +212,7 @@ where
 }
 
 impl<T, U> core::ops::IndexMut<TryIndex<T>> for [U]
-where 
+where
     T: TryInto<usize> + IndexSealed,
     T::Error: Into<TryFromIntError>,
 {
@@ -228,7 +241,7 @@ where
 pub struct Int<T>(pub T);
 
 impl<T, U> core::ops::Index<Int<T>> for [U]
-where 
+where
     T: IntSliceIndex<[U]> + IndexSealed,
 {
     type Output = <T as sealed::IntSliceIndex<[U]>>::Output;
@@ -239,7 +252,7 @@ where
 }
 
 impl<T, U> core::ops::IndexMut<Int<T>> for [U]
-where 
+where
     T: IntSliceIndex<[U]> + IndexSealed,
 {
     fn index_mut(&mut self, idx: Int<T>) -> &mut Self::Output {
@@ -286,7 +299,7 @@ where
     }
 }
 
-macro_rules! slice_index { 
+macro_rules! slice_index {
 ($($t:ty),*) => {
     $(slice_index!(@$t);)*
 };

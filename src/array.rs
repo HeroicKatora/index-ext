@@ -14,9 +14,8 @@
 //! Having to decide on the length introduces new complications that are usually put off to the
 //! actual execution of indexing. If the given indices are inconsistent, i.e. the end is smaller
 //! than the start or the end of an inclusive range is the maximum possible index, then there is no
-//! possible type to represent the output.
-//!
-//! [TODO]
+//! possible type to represent the output. We will not solve this dilemma at the moment, and only
+//! define the simple indices which is precisely `RangeTo<usize>`.
 use core::ops::{Bound, Index, IndexMut, RangeBounds};
 
 /// A marker struct for statically sized range to (`..n`).
@@ -36,7 +35,7 @@ pub type Prefix<const N: usize> = RangeTo<N>;
 
 impl<T, const N: usize> Index<RangeTo<N>> for [T] {
     type Output = [T; N];
-    fn index(&self, _: RangeTo<{N}>) -> &[T; N] {
+    fn index(&self, _: RangeTo<{ N }>) -> &[T; N] {
         let slice = &self[..N];
         unsafe {
             // SAFETY: the layout of slices and arrays of the same length are the same. We'd like
@@ -48,7 +47,7 @@ impl<T, const N: usize> Index<RangeTo<N>> for [T] {
 }
 
 impl<T, const N: usize> IndexMut<RangeTo<N>> for [T] {
-    fn index_mut(&mut self, _: RangeTo<{N}>) -> &mut [T; N] {
+    fn index_mut(&mut self, _: RangeTo<{ N }>) -> &mut [T; N] {
         let slice = &mut self[..N];
         unsafe {
             // SAFETY: the layout of slices and arrays of the same length are the same. We'd like

@@ -76,7 +76,7 @@ pub mod array;
 pub mod int;
 
 #[cfg(feature = "nightly")]
-pub use const_::{RangeTo, Prefix};
+pub use const_::{Prefix, RangeTo};
 
 /// A trait for integer based indices.
 ///
@@ -91,7 +91,7 @@ pub use const_::{RangeTo, Prefix};
 /// This trait enables the generic [`Int::get_int`] method.
 ///
 /// [`Int::get_int`]: trait.Int.html#fn.get_int
-pub trait IntSliceIndex<T: ?Sized>: int::sealed::SealedSliceIndex<T> { }
+pub trait IntSliceIndex<T: ?Sized>: int::sealed::SealedSliceIndex<T> {}
 
 /// An extension trait allowing slices to be indexed by everything convertible to `usize`.
 pub trait Int: sealed::Sealed {
@@ -116,8 +116,7 @@ pub trait Int: sealed::Sealed {
     /// ```
     ///
     /// [`slice::get`]: https://doc.rust-lang.org/stable/std/primitive.slice.html#method.get
-    fn get_int<T>(&self, idx: T)
-        -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
+    fn get_int<T>(&self, idx: T) -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>;
 
@@ -139,8 +138,10 @@ pub trait Int: sealed::Sealed {
     /// ```
     ///
     /// [`slice::get_mut`]: https://doc.rust-lang.org/stable/std/primitive.slice.html#method.get_mut
-    fn get_int_mut<T>(&mut self, idx: T)
-        -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
+    fn get_int_mut<T>(
+        &mut self,
+        idx: T,
+    ) -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>;
 
@@ -162,8 +163,10 @@ pub trait Int: sealed::Sealed {
     ///     assert_eq!(x.get_int_unchecked(1i8), &2);
     /// }
     /// ```
-    unsafe fn get_int_unchecked<T>(&self, idx: T)
-        -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
+    unsafe fn get_int_unchecked<T>(
+        &self,
+        idx: T,
+    ) -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
     where
         T: IntSliceIndex<Self>;
 
@@ -189,8 +192,10 @@ pub trait Int: sealed::Sealed {
     /// ```
     ///
     /// [`slice::get_unchecked_mut`]: https://doc.rust-lang.org/stable/std/primitive.slice.html#method.get_unchecked_mut
-    unsafe fn get_int_unchecked_mut<T>(&mut self, idx: T)
-        -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
+    unsafe fn get_int_unchecked_mut<T>(
+        &mut self,
+        idx: T,
+    ) -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
     where
         T: IntSliceIndex<Self>;
 }
@@ -198,32 +203,37 @@ pub trait Int: sealed::Sealed {
 impl<U> sealed::Sealed for [U] {}
 
 impl<U> Int for [U] {
-    fn get_int<T>(&self, idx: T)
-        -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
+    fn get_int<T>(&self, idx: T) -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>,
     {
         <T as int::sealed::IntSliceIndex<Self>>::get(idx, self)
     }
 
-    fn get_int_mut<T>(&mut self, idx: T)
-        -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
+    fn get_int_mut<T>(
+        &mut self,
+        idx: T,
+    ) -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>,
     {
         <T as int::sealed::IntSliceIndex<Self>>::get_mut(idx, self)
     }
 
-    unsafe fn get_int_unchecked<T>(&self, idx: T)
-        -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
+    unsafe fn get_int_unchecked<T>(
+        &self,
+        idx: T,
+    ) -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
     where
         T: IntSliceIndex<Self>,
     {
         <T as int::sealed::IntSliceIndex<Self>>::get_unchecked(idx, self)
     }
 
-    unsafe fn get_int_unchecked_mut<T>(&mut self, idx: T)
-        -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
+    unsafe fn get_int_unchecked_mut<T>(
+        &mut self,
+        idx: T,
+    ) -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
     where
         T: IntSliceIndex<Self>,
     {
@@ -234,32 +244,37 @@ impl<U> Int for [U] {
 impl sealed::Sealed for str {}
 
 impl Int for str {
-    fn get_int<T>(&self, idx: T)
-        -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
+    fn get_int<T>(&self, idx: T) -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>,
     {
         <T as int::sealed::IntSliceIndex<Self>>::get(idx, self)
     }
 
-    fn get_int_mut<T>(&mut self, idx: T)
-        -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
+    fn get_int_mut<T>(
+        &mut self,
+        idx: T,
+    ) -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
     where
         T: IntSliceIndex<Self>,
     {
         <T as int::sealed::IntSliceIndex<Self>>::get_mut(idx, self)
     }
 
-    unsafe fn get_int_unchecked<T>(&self, idx: T)
-        -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
+    unsafe fn get_int_unchecked<T>(
+        &self,
+        idx: T,
+    ) -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
     where
         T: IntSliceIndex<Self>,
     {
         <T as int::sealed::IntSliceIndex<Self>>::get_unchecked(idx, self)
     }
 
-    unsafe fn get_int_unchecked_mut<T>(&mut self, idx: T)
-        -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
+    unsafe fn get_int_unchecked_mut<T>(
+        &mut self,
+        idx: T,
+    ) -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
     where
         T: IntSliceIndex<Self>,
     {
