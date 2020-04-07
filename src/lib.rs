@@ -28,7 +28,7 @@
 #![cfg_attr(feature = "nightly", doc = "```")]
 #![cfg_attr(not(feature = "nightly"), doc = "```ignore")]
 //! # let slice = [0; 3];
-//! use index_ext::RangeTo;
+//! use index_ext::array::RangeTo;
 //! // Grab an array of three element from a slice.
 //! let [r, g, b] = &slice[RangeTo];
 //! ```
@@ -74,9 +74,6 @@ mod sealed {
 #[cfg(feature = "nightly")]
 pub mod array;
 pub mod int;
-
-#[cfg(feature = "nightly")]
-pub use const_::{Prefix, RangeTo};
 
 /// A trait for integer based indices.
 ///

@@ -16,7 +16,7 @@
 //! than the start or the end of an inclusive range is the maximum possible index, then there is no
 //! possible type to represent the output. We will not solve this dilemma at the moment, and only
 //! define the simple indices which is precisely `RangeTo<usize>`.
-use core::ops::{Bound, Index, IndexMut, RangeBounds};
+use core::ops::{Index, IndexMut};
 
 /// A marker struct for statically sized range to (`..n`).
 ///
@@ -24,7 +24,7 @@ use core::ops::{Bound, Index, IndexMut, RangeBounds};
 /// right hand side array pattern.
 ///
 /// ```
-/// use index_ext::RangeTo;
+/// use index_ext::array::RangeTo;
 /// # let buf = &[0u8; 3][..];
 /// let [r, g, b] = buf[RangeTo];
 /// ```
