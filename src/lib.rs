@@ -288,6 +288,16 @@ pub fn Int<T>(idx: T) -> int::Int<T> {
     int::Int(idx)
 }
 
+#[cfg(feature = "nightly")]
+macro_rules! doctest_readme {
+    { $content:expr } => {
+        #[doc = $content] extern {}
+    }
+}
+
+#[cfg(feature = "nightly")]
+doctest_readme!(include_str!("../Readme.md"));
+
 #[cfg(test)]
 mod test {
     use super::Int;

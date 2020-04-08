@@ -26,7 +26,7 @@ combines the best aspects.
 ```
 use index_ext::array::Prefix;
 let rgba = [0; 4];
-let [r, g, b] = &rgb[Prefix];
+let [r, g, b] = &rgba[Prefix];
 ```
 
 ## License
