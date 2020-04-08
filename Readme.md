@@ -12,7 +12,11 @@ just works for smaller and larger integer types than `usize`.
 
 ```
 use index_ext::Int;
-let fine = [0u8; 2][Int(1u8)];
+let buffer = [0; 256];
+assert_eq!(buffer[Int(255_u8)], 0);
+assert_eq!(buffer[Int(255_i32)], 0);
+assert_eq!(buffer.get_int(-1_i8), None);
+assert_eq!(buffer.get_int(u128::max_value()), None);
 ```
 
 ## Nightly dependent features
@@ -24,9 +28,10 @@ leverage parameter deduction and const generics to design an index type that
 combines the best aspects.
 
 ```
-use index_ext::array::Prefix;
+use index_ext::array::RangeTo;
 let rgba = [0; 4];
-let [r, g, b] = &rgba[Prefix];
+let rgb: [u8; 3] = rgba[RangeTo];
+let [r, g, b] = &rgba[RangeTo];
 ```
 
 ## License
