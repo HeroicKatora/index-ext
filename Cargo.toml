@@ -6,6 +6,7 @@ version = "0.0.1"
 authors = ["Andreas Molzer <andreas.molzer@gmx.de>"]
 edition = "2018"
 
+readme = "Readme.md"
 documentation = "https://docs.rs/index-ext"
 homepage = "https://github.com/HeroicKatora/index-ext"
 repository = "https://github.com/HeroicKatora/index-ext"

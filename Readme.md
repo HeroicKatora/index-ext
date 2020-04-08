@@ -11,8 +11,8 @@ which `usize` is the wrong choice. With the types and trait provided here, this
 just works for smaller and larger integer types than `usize`.
 
 ```
-use index_ext::IntIndex;
-let fine = [0u8; 2][IntIndex(1u8)];
+use index_ext::Int;
+let fine = [0u8; 2][Int(1u8)];
 ```
 
 ## Nightly dependent features
@@ -24,7 +24,7 @@ leverage parameter deduction and const generics to design an index type that
 combines the best aspects.
 
 ```
-use index_ext::Prefix;
+use index_ext::array::Prefix;
 let rgba = [0; 4];
 let [r, g, b] = &rgb[Prefix];
 ```
