@@ -109,7 +109,7 @@ impl<'slice> Len<'slice> {
     ///
     /// This method return `Some` when the index is smaller than the length.
     pub fn index(self, idx: usize) -> Option<Idx<'slice, usize>> {
-        if self.len < idx {
+        if idx < self.len {
             Some(Idx {
                 idx,
                 lifetime: self.lifetime,
@@ -123,7 +123,7 @@ impl<'slice> Len<'slice> {
     ///
     /// This method return `Some` when the indices are ordered and `to` does not exceed the length.
     pub fn range(self, from: usize, to: usize) -> Option<Idx<'slice, core::ops::Range<usize>>> {
-        if self.len < from && self.len < to && from <= to {
+        if from <= to && to <= self.len {
             Some(Idx {
                 idx: from..to,
                 lifetime: self.lifetime,
@@ -137,7 +137,7 @@ impl<'slice> Len<'slice> {
     ///
     /// This method return `Some` when `from` does not exceed the length.
     pub fn range_from(self, from: usize) -> Option<Idx<'slice, core::ops::RangeFrom<usize>>> {
-        if self.len <= from {
+        if from <= self.len {
             Some(Idx {
                 idx: from..,
                 lifetime: self.lifetime,
@@ -151,7 +151,7 @@ impl<'slice> Len<'slice> {
     ///
     /// This method return `Some` when `to` does not exceed the length.
     pub fn range_to(self, to: usize) -> Option<Idx<'slice, core::ops::RangeTo<usize>>> {
-        if self.len <= to {
+        if to <= self.len {
             Some(Idx {
                 idx: ..to,
                 lifetime: self.lifetime,
@@ -305,5 +305,26 @@ where
 {
     fn index_mut(&mut self, idx: Idx<'slice, I>) -> &mut Self::Output {
         self.get_safe_mut(idx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn basics() {
+        fn problematic(buf: &mut [u8], offsets: &[u8], idx: usize) {
+            super::with_ref(&offsets[..=idx], |offsets, len| {
+                let mut idx = len.index(idx).unwrap();
+                for b in buf {
+                    *b = idx.into_inner() as u8;
+                    idx = idx.saturating_sub(usize::from(offsets[idx]));
+                }
+            })
+        }
+
+        let mut output = [0; 3];
+        let offsets = [1, 0, 2, 2];
+        problematic(&mut output, &offsets[..], 3);
+        assert_eq!(output, [3, 1, 1]);
     }
 }
