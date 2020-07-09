@@ -18,10 +18,7 @@ use core::num::NonZeroUsize;
 ///
 /// The supplied function gets a freshly constructed pair of corresponding slice reference and
 /// length tag. It has no control over the exact lifetime.
-pub fn with_ref<T, U>(
-    slice: &[T],
-    f: impl for<'r> FnOnce(Ref<'r, T>, Len<'r>) -> U
-) -> U {
+pub fn with_ref<T, U>(slice: &[T], f: impl for<'r> FnOnce(Ref<'r, T>, Len<'r>) -> U) -> U {
     let len = Len {
         len: slice.len(),
         lifetime: PhantomData,
@@ -36,10 +33,7 @@ pub fn with_ref<T, U>(
 ///
 /// The supplied function gets a freshly constructed pair of corresponding slice reference and
 /// length tag. It has no control over the exact lifetime.
-pub fn with_mut<T, U>(
-    slice: &mut [T],
-    f: impl for<'r> FnOnce(Mut<'r, T>, Len<'r>) -> U
-) -> U {
+pub fn with_mut<T, U>(slice: &mut [T], f: impl for<'r> FnOnce(Mut<'r, T>, Len<'r>) -> U) -> U {
     let len = Len {
         len: slice.len(),
         lifetime: PhantomData,
@@ -116,7 +110,10 @@ impl<'slice> Len<'slice> {
     /// This method return `Some` when the index is smaller than the length.
     pub fn index(self, idx: usize) -> Option<Idx<'slice, usize>> {
         if self.len < idx {
-            Some(Idx { idx, lifetime: self.lifetime })
+            Some(Idx {
+                idx,
+                lifetime: self.lifetime,
+            })
         } else {
             None
         }
@@ -127,7 +124,10 @@ impl<'slice> Len<'slice> {
     /// This method return `Some` when the indices are ordered and `to` does not exceed the length.
     pub fn range(self, from: usize, to: usize) -> Option<Idx<'slice, core::ops::Range<usize>>> {
         if self.len < from && self.len < to && from <= to {
-            Some(Idx { idx: from..to, lifetime: self.lifetime })
+            Some(Idx {
+                idx: from..to,
+                lifetime: self.lifetime,
+            })
         } else {
             None
         }
@@ -138,7 +138,10 @@ impl<'slice> Len<'slice> {
     /// This method return `Some` when `from` does not exceed the length.
     pub fn range_from(self, from: usize) -> Option<Idx<'slice, core::ops::RangeFrom<usize>>> {
         if self.len <= from {
-            Some(Idx { idx: from.., lifetime: self.lifetime })
+            Some(Idx {
+                idx: from..,
+                lifetime: self.lifetime,
+            })
         } else {
             None
         }
@@ -149,7 +152,10 @@ impl<'slice> Len<'slice> {
     /// This method return `Some` when `to` does not exceed the length.
     pub fn range_to(self, to: usize) -> Option<Idx<'slice, core::ops::RangeTo<usize>>> {
         if self.len <= to {
-            Some(Idx { idx: ..to, lifetime: self.lifetime })
+            Some(Idx {
+                idx: ..to,
+                lifetime: self.lifetime,
+            })
         } else {
             None
         }
@@ -160,7 +166,10 @@ impl<'slice> Len<'slice> {
     /// This method exists mostly for completeness sake. There is no bounds check when accessing a
     /// complete slice with `..`.
     pub fn range_full(self) -> Idx<'slice, core::ops::RangeFull> {
-        Idx { idx: .., lifetime: self.lifetime }
+        Idx {
+            idx: ..,
+            lifetime: self.lifetime,
+        }
     }
 }
 
@@ -168,17 +177,26 @@ impl<'slice> NonZeroLen<'slice> {
     /// Construct the length of a non-empty slice.
     pub fn new(complete: Len<'slice>) -> Option<Self> {
         let len = NonZeroUsize::new(complete.len)?;
-        Some(NonZeroLen { len, lifetime: complete.lifetime })
+        Some(NonZeroLen {
+            len,
+            lifetime: complete.lifetime,
+        })
     }
 
     /// Construct an index to the first element of a non-empty slice.
     pub fn first(self) -> Idx<'slice, usize> {
-        Idx { idx: 0, lifetime: self.lifetime }
+        Idx {
+            idx: 0,
+            lifetime: self.lifetime,
+        }
     }
 
     /// Construct an index to the last element of a non-empty slice.
     pub fn last(self) -> Idx<'slice, usize> {
-        Idx { idx: self.len.get() - 1, lifetime: self.lifetime }
+        Idx {
+            idx: self.len.get() - 1,
+            lifetime: self.lifetime,
+        }
     }
 
     /// Get the non-zero length.
@@ -189,7 +207,10 @@ impl<'slice> NonZeroLen<'slice> {
 
 impl<'slice> From<NonZeroLen<'slice>> for Len<'slice> {
     fn from(from: NonZeroLen<'slice>) -> Self {
-        Len { len: from.len.get(), lifetime: from.lifetime }
+        Len {
+            len: from.len.get(),
+            lifetime: from.lifetime,
+        }
     }
 }
 
@@ -202,11 +223,17 @@ impl<'slice, I> Idx<'slice, I> {
 
 impl<'slice> Idx<'slice, usize> {
     pub fn saturating_sub(self, sub: usize) -> Self {
-        Idx { idx: self.idx.saturating_sub(sub), lifetime: self.lifetime }
+        Idx {
+            idx: self.idx.saturating_sub(sub),
+            lifetime: self.lifetime,
+        }
     }
 
     pub fn truncate(self, min: usize) -> Self {
-        Idx { idx: self.idx.min(min), lifetime: self.lifetime }
+        Idx {
+            idx: self.idx.min(min),
+            lifetime: self.lifetime,
+        }
     }
 }
 
@@ -224,7 +251,10 @@ impl<'slice, T> Mut<'slice, T> {
     }
 
     /// Mutably index the slice unchecked but soundly.
-    pub fn get_safe_mut<I: core::slice::SliceIndex<[T]>>(&mut self, index: Idx<'slice, I>) -> &mut I::Output {
+    pub fn get_safe_mut<I: core::slice::SliceIndex<[T]>>(
+        &mut self,
+        index: Idx<'slice, I>,
+    ) -> &mut I::Output {
         unsafe { self.slice.get_unchecked_mut(index.idx) }
     }
 }
@@ -251,7 +281,7 @@ impl<T> core::ops::DerefMut for Mut<'_, T> {
 
 impl<'slice, T, I> core::ops::Index<Idx<'slice, I>> for Ref<'slice, T>
 where
-    I: core::slice::SliceIndex<[T]>
+    I: core::slice::SliceIndex<[T]>,
 {
     type Output = I::Output;
     fn index(&self, idx: Idx<'slice, I>) -> &Self::Output {
@@ -261,7 +291,7 @@ where
 
 impl<'slice, T, I> core::ops::Index<Idx<'slice, I>> for Mut<'slice, T>
 where
-    I: core::slice::SliceIndex<[T]>
+    I: core::slice::SliceIndex<[T]>,
 {
     type Output = I::Output;
     fn index(&self, idx: Idx<'slice, I>) -> &Self::Output {
@@ -271,7 +301,7 @@ where
 
 impl<'slice, T, I> core::ops::IndexMut<Idx<'slice, I>> for Mut<'slice, T>
 where
-    I: core::slice::SliceIndex<[T]>
+    I: core::slice::SliceIndex<[T]>,
 {
     fn index_mut(&mut self, idx: Idx<'slice, I>) -> &mut Self::Output {
         self.get_safe_mut(idx)
