@@ -74,6 +74,7 @@ mod sealed {
 #[cfg(feature = "nightly")]
 pub mod array;
 pub mod int;
+pub mod tag;
 
 /// A trait for integer based indices.
 ///
