@@ -328,3 +328,59 @@ mod tests {
         assert_eq!(output, [3, 1, 1]);
     }
 }
+
+/// assertion macros are due to (c) theInkSquid (foobles)
+/// ```compile_fail
+/// use index_ext::tag;
+/// macro_rules! assert_is_covariant {
+///     (for[$($gen_params:tt)*] ($type_name:ty) over $lf:lifetime) => {
+///         #[allow(warnings)]
+///         const _: fn() = || {
+///             struct Cov<$lf, $($gen_params)*>($type_name);
+/// 
+///             fn test_cov<'__s, '__a: '__b, '__b, $($gen_params)*>(
+///                 subtype: &'__s Cov<'__a, $($gen_params)*>,
+///                 mut _supertype: &'__s Cov<'__b, $($gen_params)*>,
+///             ) {
+///                 _supertype = subtype;
+///             }
+///         };
+///     };
+/// 
+///     (($type_name:ty) over $lf:lifetime) => {
+///         assert_is_covariant!(for[] ($type_name) over $lf);
+///     };
+/// }
+///
+/// assert_is_covariant! {
+///     (tag::Len<'r>) over 'r
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use index_ext::tag;
+/// macro_rules! assert_is_contravariant {
+///     (for[$($gen_params:tt)*] ($type_name:ty) over $lf:lifetime) => {
+///         #[allow(warnings)]
+///         const _: fn() = || {
+///             struct Contra<$lf, $($gen_params)*>($type_name);
+/// 
+///             fn test_contra<'__s, '__a: '__b, '__b, $($gen_params)*>(
+///                 mut _subtype: &'__s Contra<'__a, $($gen_params)*>,
+///                 supertype: &'__s Contra<'__b, $($gen_params)*>,
+///             ) {
+///                 _subtype = supertype;
+///             }
+///         };
+///     };
+/// 
+///     (($type_name:ty) over $lf:lifetime) => {
+///         assert_is_contravariant!(for[] ($type_name) over $lf);
+///     };
+/// }
+///
+/// assert_is_contravariant! {
+///     (tag::Len<'r>) over 'r
+/// }
+/// ```
+extern {}
