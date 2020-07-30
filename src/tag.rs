@@ -14,17 +14,53 @@
 use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 
+/// A type suitable for tagging length, indices, and containers.
+///
+/// It must _not_ be safe to create two instances of the same type and should be impossible except
+/// through the `copy` method. Note that this restriction MUST hold for every possible coercion
+/// allowed by the language.
+pub unsafe trait Tag: Sized {
+    /// Copy the tag.
+    /// This is a potentially very unsafe operation as it allows duplicating the tag to another
+    /// bound object, which might conflict with the implied semantics on other state.
+    unsafe fn copy(&self) -> Self;
+}
+
+/// A generative lifetime.
+///
+/// This is a simple implementor of `Tag` that allows a _local_ but entirely safe and macro-free
+/// use of check indices. The compiler introduces new lifetimes and the design of these types
+/// ensure that no other object with the same can be created.
+#[derive(Clone, Copy)]
+pub struct Generative<'lt> {
+    /// An invariant lifetime.
+    generated: PhantomData<&'lt fn(&'lt [()])>,
+}
+
+/// SAFETY: Does not have a public constructor and is only introduced with `with_mut` and
+/// `with_ref` which do not expose the actual lifetime.
+unsafe impl Tag for Generative<'_> {
+    unsafe fn copy(&self) -> Self {
+        Generative { generated: self.generated }
+    }
+}
+
 /// Enter a region for soundly indexing a slice without bounds checks.
 ///
 /// The supplied function gets a freshly constructed pair of corresponding slice reference and
 /// length tag. It has no control over the exact lifetime.
-pub fn with_ref<T, U>(slice: &[T], f: impl for<'r> FnOnce(Ref<'r, T>, Len<'r>) -> U) -> U {
+pub fn with_ref<'slice, T, U>(
+    slice: &'slice [T],
+    f: impl for<'r> FnOnce(Ref<'slice, T, Generative<'r>>, Len<Generative<'r>>) -> U,
+) -> U {
     let len = Len {
         len: slice.len(),
-        lifetime: PhantomData,
+        tag: Generative {
+            generated: PhantomData,
+        },
     };
 
-    let slice = Ref { slice };
+    let slice = Ref { slice, tag: unsafe { len.tag.copy() } };
 
     f(slice, len)
 }
@@ -33,13 +69,18 @@ pub fn with_ref<T, U>(slice: &[T], f: impl for<'r> FnOnce(Ref<'r, T>, Len<'r>) -
 ///
 /// The supplied function gets a freshly constructed pair of corresponding slice reference and
 /// length tag. It has no control over the exact lifetime.
-pub fn with_mut<T, U>(slice: &mut [T], f: impl for<'r> FnOnce(Mut<'r, T>, Len<'r>) -> U) -> U {
+pub fn with_mut<'slice, T, U>(
+    slice: &'slice mut [T],
+    f: impl for<'r> FnOnce(Mut<'slice, T, Generative<'r>>, Len<Generative<'r>>) -> U
+) -> U {
     let len = Len {
         len: slice.len(),
-        lifetime: PhantomData,
+        tag: Generative {
+            generated: PhantomData,
+        },
     };
 
-    let slice = Mut { slice };
+    let slice = Mut { slice, tag: unsafe { len.tag.copy() } };
 
     f(slice, len)
 }
@@ -53,18 +94,16 @@ pub fn with_mut<T, U>(slice: &mut [T], f: impl for<'r> FnOnce(Mut<'r, T>, Len<'r
 /// across method bounds where the compiler's optimizer and inline pass is no longer aware of the
 /// connection and would otherwise insert another check when the slice is indexed later.
 #[derive(Clone, Copy)]
-pub struct Len<'slice> {
+pub struct Len<Tag> {
     len: usize,
-    /// An invariant lifetime.
-    lifetime: PhantomData<&'slice fn(&'slice [()])>,
+    tag: Tag,
 }
 
 /// The length of a non-empty slice.
 #[derive(Clone, Copy)]
-pub struct NonZeroLen<'slice> {
+pub struct NonZeroLen<Tag> {
     len: NonZeroUsize,
-    /// An invariant lifetime.
-    lifetime: PhantomData<&'slice fn(&'slice [()])>,
+    tag: Tag,
 }
 
 /// A slice with a unique lifetime.
@@ -73,8 +112,10 @@ pub struct NonZeroLen<'slice> {
 ///
 /// [`Len::with_ref`]: struct.Len.html#method.with_ref
 #[derive(Clone, Copy)]
-pub struct Ref<'slice, T> {
+pub struct Ref<'slice, T, Tag> {
     slice: &'slice [T],
+    #[allow(dead_code)]
+    tag: Tag,
 }
 
 /// A mutable slice with a unique lifetime.
@@ -82,8 +123,10 @@ pub struct Ref<'slice, T> {
 /// You can only construct this via [`Len::with_mut`].
 ///
 /// [`Len::with_mut`]: struct.Len.html#method.with_mut
-pub struct Mut<'slice, T> {
+pub struct Mut<'slice, T, Tag> {
     slice: &'slice mut [T],
+    #[allow(dead_code)]
+    tag: Tag,
 }
 
 /// A valid index for all slices of the same length.
@@ -93,13 +136,13 @@ pub struct Mut<'slice, T> {
 ///
 /// [`Len`]: struct.Len.html
 #[derive(Clone, Copy)]
-pub struct Idx<'slice, I> {
+pub struct Idx<I, Tag> {
     idx: I,
     /// An invariant lifetime.
-    lifetime: PhantomData<&'slice fn(&'slice [()])>,
+    tag: Tag,
 }
 
-impl<'slice> Len<'slice> {
+impl<T: Tag> Len<T> {
     /// Returns the stored length.
     pub fn get(self) -> usize {
         self.len
@@ -108,11 +151,11 @@ impl<'slice> Len<'slice> {
     /// Construct an index to a single element.
     ///
     /// This method return `Some` when the index is smaller than the length.
-    pub fn index(self, idx: usize) -> Option<Idx<'slice, usize>> {
+    pub fn index(self, idx: usize) -> Option<Idx<usize, T>> {
         if idx < self.len {
             Some(Idx {
                 idx,
-                lifetime: self.lifetime,
+                tag: unsafe { self.tag.copy() },
             })
         } else {
             None
@@ -122,11 +165,11 @@ impl<'slice> Len<'slice> {
     /// Construct an index to a range of element.
     ///
     /// This method return `Some` when the indices are ordered and `to` does not exceed the length.
-    pub fn range(self, from: usize, to: usize) -> Option<Idx<'slice, core::ops::Range<usize>>> {
+    pub fn range(self, from: usize, to: usize) -> Option<Idx<core::ops::Range<usize>, T>> {
         if from <= to && to <= self.len {
             Some(Idx {
                 idx: from..to,
-                lifetime: self.lifetime,
+                tag: unsafe { self.tag.copy() },
             })
         } else {
             None
@@ -136,11 +179,11 @@ impl<'slice> Len<'slice> {
     /// Construct an index to a range from an element.
     ///
     /// This method return `Some` when `from` does not exceed the length.
-    pub fn range_from(self, from: usize) -> Option<Idx<'slice, core::ops::RangeFrom<usize>>> {
+    pub fn range_from(self, from: usize) -> Option<Idx<core::ops::RangeFrom<usize>, T>> {
         if from <= self.len {
             Some(Idx {
                 idx: from..,
-                lifetime: self.lifetime,
+                tag: unsafe { self.tag.copy() },
             })
         } else {
             None
@@ -150,11 +193,11 @@ impl<'slice> Len<'slice> {
     /// Construct an index to a range up to an element.
     ///
     /// This method return `Some` when `to` does not exceed the length.
-    pub fn range_to(self, to: usize) -> Option<Idx<'slice, core::ops::RangeTo<usize>>> {
+    pub fn range_to(self, to: usize) -> Option<Idx<core::ops::RangeTo<usize>, T>> {
         if to <= self.len {
             Some(Idx {
                 idx: ..to,
-                lifetime: self.lifetime,
+                tag: unsafe { self.tag.copy() },
             })
         } else {
             None
@@ -165,37 +208,37 @@ impl<'slice> Len<'slice> {
     ///
     /// This method exists mostly for completeness sake. There is no bounds check when accessing a
     /// complete slice with `..`.
-    pub fn range_full(self) -> Idx<'slice, core::ops::RangeFull> {
+    pub fn range_full(self) -> Idx<core::ops::RangeFull, T> {
         Idx {
             idx: ..,
-            lifetime: self.lifetime,
+            tag: unsafe { self.tag.copy() },
         }
     }
 }
 
-impl<'slice> NonZeroLen<'slice> {
+impl<T: Tag> NonZeroLen<T> {
     /// Construct the length of a non-empty slice.
-    pub fn new(complete: Len<'slice>) -> Option<Self> {
+    pub fn new(complete: Len<T>) -> Option<Self> {
         let len = NonZeroUsize::new(complete.len)?;
         Some(NonZeroLen {
             len,
-            lifetime: complete.lifetime,
+            tag: unsafe { complete.tag.copy() },
         })
     }
 
     /// Construct an index to the first element of a non-empty slice.
-    pub fn first(self) -> Idx<'slice, usize> {
+    pub fn first(self) -> Idx<usize, T> {
         Idx {
             idx: 0,
-            lifetime: self.lifetime,
+            tag: unsafe { self.tag.copy() },
         }
     }
 
     /// Construct an index to the last element of a non-empty slice.
-    pub fn last(self) -> Idx<'slice, usize> {
+    pub fn last(self) -> Idx<usize, T> {
         Idx {
             idx: self.len.get() - 1,
-            lifetime: self.lifetime,
+            tag: unsafe { self.tag.copy() },
         }
     }
 
@@ -205,105 +248,115 @@ impl<'slice> NonZeroLen<'slice> {
     }
 }
 
-impl<'slice> From<NonZeroLen<'slice>> for Len<'slice> {
-    fn from(from: NonZeroLen<'slice>) -> Self {
+impl<T: Tag> From<NonZeroLen<T>> for Len<T> {
+    fn from(from: NonZeroLen<T>) -> Self {
         Len {
             len: from.len.get(),
-            lifetime: from.lifetime,
+            tag: unsafe { from.tag.copy() },
         }
     }
 }
 
-impl<'slice, I> Idx<'slice, I> {
+impl<T, I> Idx <I, T> {
     /// Get the inner index.
     pub fn into_inner(self) -> I {
         self.idx
     }
 }
 
-impl<'slice> Idx<'slice, usize> {
+impl<T> Idx<usize, T> {
     pub fn saturating_sub(self, sub: usize) -> Self {
         Idx {
             idx: self.idx.saturating_sub(sub),
-            lifetime: self.lifetime,
+            tag: self.tag,
         }
     }
 
     pub fn truncate(self, min: usize) -> Self {
         Idx {
             idx: self.idx.min(min),
-            lifetime: self.lifetime,
+            tag: self.tag,
         }
     }
 }
 
-impl<'slice, T> Ref<'slice, T> {
+impl<'slice, T: Tag, E> Ref<'slice, E, T> {
     /// Index the slice unchecked but soundly.
-    pub fn get_safe<I: core::slice::SliceIndex<[T]>>(&self, index: Idx<'slice, I>) -> &I::Output {
+    pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
         unsafe { self.slice.get_unchecked(index.idx) }
+    }
+
+    /// Unwrap the inner slice, dropping all assertions of safe indexing.
+    pub fn into_inner(self) -> &'slice [E] {
+        self.slice
     }
 }
 
-impl<'slice, T> Mut<'slice, T> {
+impl<'slice, T: Tag, E> Mut<'slice, E, T> {
     /// Index the slice unchecked but soundly.
-    pub fn get_safe<I: core::slice::SliceIndex<[T]>>(&self, index: Idx<'slice, I>) -> &I::Output {
+    pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
         unsafe { self.slice.get_unchecked(index.idx) }
     }
 
     /// Mutably index the slice unchecked but soundly.
-    pub fn get_safe_mut<I: core::slice::SliceIndex<[T]>>(
+    pub fn get_safe_mut<I: core::slice::SliceIndex<[E]>>(
         &mut self,
-        index: Idx<'slice, I>,
+        index: Idx<I, T>,
     ) -> &mut I::Output {
         unsafe { self.slice.get_unchecked_mut(index.idx) }
     }
-}
 
-impl<T> core::ops::Deref for Ref<'_, T> {
-    type Target = [T];
-    fn deref(&self) -> &[T] {
+    /// Unwrap the inner slice, dropping all assertions of safe indexing.
+    pub fn into_inner(self) -> &'slice [E] {
         self.slice
     }
 }
 
-impl<T> core::ops::Deref for Mut<'_, T> {
-    type Target = [T];
-    fn deref(&self) -> &[T] {
+impl<E, T> core::ops::Deref for Ref<'_, E, T> {
+    type Target = [E];
+    fn deref(&self) -> &[E] {
         self.slice
     }
 }
 
-impl<T> core::ops::DerefMut for Mut<'_, T> {
-    fn deref_mut(&mut self) -> &mut [T] {
+impl<E, T> core::ops::Deref for Mut<'_, E, T> {
+    type Target = [E];
+    fn deref(&self) -> &[E] {
         self.slice
     }
 }
 
-impl<'slice, T, I> core::ops::Index<Idx<'slice, I>> for Ref<'slice, T>
+impl<E, T> core::ops::DerefMut for Mut<'_, E, T> {
+    fn deref_mut(&mut self) -> &mut [E] {
+        self.slice
+    }
+}
+
+impl<T: Tag, E, I> core::ops::Index<Idx<I, T>> for Ref<'_, E, T>
 where
-    I: core::slice::SliceIndex<[T]>,
+    I: core::slice::SliceIndex<[E]>,
 {
     type Output = I::Output;
-    fn index(&self, idx: Idx<'slice, I>) -> &Self::Output {
+    fn index(&self, idx: Idx<I, T>) -> &Self::Output {
         self.get_safe(idx)
     }
 }
 
-impl<'slice, T, I> core::ops::Index<Idx<'slice, I>> for Mut<'slice, T>
+impl<T: Tag, E, I> core::ops::Index<Idx<I, T>> for Mut<'_, E, T>
 where
-    I: core::slice::SliceIndex<[T]>,
+    I: core::slice::SliceIndex<[E]>,
 {
     type Output = I::Output;
-    fn index(&self, idx: Idx<'slice, I>) -> &Self::Output {
+    fn index(&self, idx: Idx<I, T>) -> &Self::Output {
         self.get_safe(idx)
     }
 }
 
-impl<'slice, T, I> core::ops::IndexMut<Idx<'slice, I>> for Mut<'slice, T>
+impl<T: Tag, E, I> core::ops::IndexMut<Idx<I, T>> for Mut<'_, E, T>
 where
-    I: core::slice::SliceIndex<[T]>,
+    I: core::slice::SliceIndex<[E]>,
 {
-    fn index_mut(&mut self, idx: Idx<'slice, I>) -> &mut Self::Output {
+    fn index_mut(&mut self, idx: Idx<I, T>) -> &mut Self::Output {
         self.get_safe_mut(idx)
     }
 }
