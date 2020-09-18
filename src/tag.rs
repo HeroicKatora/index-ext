@@ -274,6 +274,11 @@ impl<T> ExactSize<T> {
     pub const unsafe fn from_len_untagged(bound: Len<T>) -> Self {
         ExactSize { inner: bound }
     }
+
+    /// Returns the length.
+    pub const fn get(&self) -> usize {
+        self.inner.len
+    }
 }
 
 impl<T: Tag> ExactSize<T> {
