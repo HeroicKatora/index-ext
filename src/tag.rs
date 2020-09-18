@@ -19,12 +19,7 @@ use core::num::NonZeroUsize;
 /// It must _not_ be safe to create two instances of the same type and should be impossible except
 /// through the `copy` method. Note that this restriction MUST hold for every possible coercion
 /// allowed by the language.
-pub unsafe trait Tag: Sized {
-    /// Copy the tag.
-    /// This is a potentially very unsafe operation as it allows duplicating the tag to another
-    /// bound object, which might conflict with the implied semantics on other state.
-    unsafe fn copy(&self) -> Self;
-}
+pub unsafe trait Tag: Copy {}
 
 /// A generative lifetime.
 ///
@@ -37,13 +32,8 @@ pub struct Generative<'lt> {
     generated: PhantomData<&'lt fn(&'lt [()])>,
 }
 
-/// SAFETY: Does not have a public constructor and is only introduced with `with_mut` and
-/// `with_ref` which do not expose the actual lifetime.
-unsafe impl Tag for Generative<'_> {
-    unsafe fn copy(&self) -> Self {
-        Generative { generated: self.generated }
-    }
-}
+/// SAFETY: This is invariant over the lifetime. There are no other coercions.
+unsafe impl Tag for Generative<'_> {}
 
 /// A named unique tag.
 pub struct Named<T> {
@@ -65,7 +55,7 @@ pub fn with_ref<'slice, T, U>(
         },
     };
 
-    let slice = Ref { slice, tag: unsafe { len.tag.copy() } };
+    let slice = Ref { slice, tag: len.tag };
 
     f(slice, len)
 }
@@ -85,7 +75,7 @@ pub fn with_mut<'slice, T, U>(
         },
     };
 
-    let slice = Mut { slice, tag: unsafe { len.tag.copy() } };
+    let slice = Mut { slice, tag: len.tag };
 
     f(slice, len)
 }
@@ -171,7 +161,7 @@ impl<T: Tag> Len<T> {
         if idx < self.len {
             Some(Idx {
                 idx,
-                tag: unsafe { self.tag.copy() },
+                tag: self.tag,
             })
         } else {
             None
@@ -185,7 +175,7 @@ impl<T: Tag> Len<T> {
         if from <= to && to <= self.len {
             Some(Idx {
                 idx: from..to,
-                tag: unsafe { self.tag.copy() },
+                tag: self.tag,
             })
         } else {
             None
@@ -199,7 +189,7 @@ impl<T: Tag> Len<T> {
         if from <= self.len {
             Some(Idx {
                 idx: from..,
-                tag: unsafe { self.tag.copy() },
+                tag: self.tag,
             })
         } else {
             None
@@ -213,7 +203,7 @@ impl<T: Tag> Len<T> {
         if to <= self.len {
             Some(Idx {
                 idx: ..to,
-                tag: unsafe { self.tag.copy() },
+                tag: self.tag,
             })
         } else {
             None
@@ -227,7 +217,7 @@ impl<T: Tag> Len<T> {
     pub fn range_full(self) -> Idx<core::ops::RangeFull, T> {
         Idx {
             idx: ..,
-            tag: unsafe { self.tag.copy() },
+            tag: self.tag,
         }
     }
 }
@@ -238,7 +228,7 @@ impl<T: Tag> NonZeroLen<T> {
         let len = NonZeroUsize::new(complete.len)?;
         Some(NonZeroLen {
             len,
-            tag: unsafe { complete.tag.copy() },
+            tag: complete.tag,
         })
     }
 
@@ -246,7 +236,7 @@ impl<T: Tag> NonZeroLen<T> {
     pub fn first(self) -> Idx<usize, T> {
         Idx {
             idx: 0,
-            tag: unsafe { self.tag.copy() },
+            tag: self.tag,
         }
     }
 
@@ -254,7 +244,7 @@ impl<T: Tag> NonZeroLen<T> {
     pub fn last(self) -> Idx<usize, T> {
         Idx {
             idx: self.len.get() - 1,
-            tag: unsafe { self.tag.copy() },
+            tag: self.tag,
         }
     }
 
@@ -267,6 +257,9 @@ impl<T: Tag> NonZeroLen<T> {
 impl<T: Tag> ExactSize<T> {
     /// Construct a new bound between yet-to-create indices and slices.
     ///
+    /// # Safety
+    ///
+    /// All `ExactSize` instances with the same tag type must also have the same `len` field.
     pub unsafe fn new(len: usize, tag: T) -> Self {
         ExactSize { len, tag }
     }
@@ -274,6 +267,7 @@ impl<T: Tag> ExactSize<T> {
     /// Construct a new bound from a length.
     ///
     /// #Safety
+    ///
     /// You _must_ ensure that no slice with this same tag can be shorter than `len`. In particular
     /// there mustn't be any other `ExactSize` with a differing length.
     pub unsafe fn from_len(len: Len<T>) -> Self {
@@ -287,6 +281,19 @@ impl<T: Tag> ExactSize<T> {
     /// long enough to be allowed. This is not safely reversible.
     pub fn len(self) -> Len<T> {
         Len { len: self.len, tag: self.tag }
+    }
+
+    /// Construct a new bound from an pair of Len and slice with the same length.
+    ///
+    /// Note that the invariant of `ExactSize` is that all `Len` are guaranteed to be at most the
+    /// size and all `Ref` and `RefMut` are guaranteed to be at least the size. The only possible
+    /// overlap between the two is the exact slice length, which we can dynamically check.
+    ///
+    /// # Panics
+    /// This method panics of `len.get()` and `slice.len()` are not equal.
+    pub fn with_matching_pair<U>(len: Len<T>, slice: Ref<'_, T, U>) -> Self {
+        assert_eq!(len.get(), slice.len(), "Length and slice do not define a precise size");
+        ExactSize { len: len.get(), tag: len.tag }
     }
 }
 
@@ -305,15 +312,13 @@ impl<T> Named<T> {
     }
 }
 
-unsafe impl<T> Tag for Named<T> {
-    unsafe fn copy(&self) -> Self { *self }
-}
+unsafe impl<T> Tag for Named<T> {}
 
 impl<T: Tag> From<NonZeroLen<T>> for Len<T> {
     fn from(from: NonZeroLen<T>) -> Self {
         Len {
             len: from.len.get(),
-            tag: unsafe { from.tag.copy() },
+            tag: from.tag,
         }
     }
 }
@@ -342,6 +347,21 @@ impl<T> Idx<usize, T> {
 }
 
 impl<'slice, T: Tag, E> Ref<'slice, E, T> {
+    /// Try to wrap a slice into a safe index wrapper.
+    ///
+    /// Returns `Some(_)` if the slice is at least as long as the `size` requires, otherwise
+    /// returns `None`.
+    pub fn new(slice: &'slice [E], size: ExactSize<T>) -> Option<Self> {
+        if slice.len() >= size.len {
+            Some(Ref {
+                slice,
+                tag: size.tag,
+            })
+        } else {
+            None
+        }
+    }
+
     /// Index the slice unchecked but soundly.
     pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
         unsafe { self.slice.get_unchecked(index.idx) }
@@ -354,6 +374,21 @@ impl<'slice, T: Tag, E> Ref<'slice, E, T> {
 }
 
 impl<'slice, T: Tag, E> Mut<'slice, E, T> {
+    /// Try to wrap a slice into a safe index wrapper.
+    ///
+    /// Returns `Some(_)` if the slice is at least as long as the `size` requires, otherwise
+    /// returns `None`.
+    pub fn new(slice: &'slice mut [E], size: ExactSize<T>) -> Option<Self> {
+        if slice.len() >= size.len {
+            Some(Mut {
+                slice,
+                tag: size.tag,
+            })
+        } else {
+            None
+        }
+    }
+
     /// Index the slice unchecked but soundly.
     pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
         unsafe { self.slice.get_unchecked(index.idx) }
