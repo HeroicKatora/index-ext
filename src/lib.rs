@@ -63,6 +63,8 @@
 //! `core` then this indirection would not be necessary and ergonomics would improve.
 #![no_std]
 #![cfg_attr(feature = "nightly", feature(const_generics))]
+#![cfg(feature = "alloc")]
+extern crate alloc;
 
 mod sealed {
     /// Seals the `Int` extension trait.
@@ -74,6 +76,7 @@ mod sealed {
 #[cfg(feature = "nightly")]
 pub mod array;
 pub mod int;
+pub mod tag;
 
 /// A trait for integer based indices.
 ///
