@@ -134,6 +134,21 @@ pub struct Mut<'slice, T, Tag> {
     tag: Tag,
 }
 
+/// An owned, allocated slice with a checked length.
+#[cfg(feature = "alloc")]
+pub struct Boxed<T, Tag> {
+    inner: alloc::boxed::Box<[T]>,
+    tag: Tag,
+}
+
+pub trait ConstantSource {
+    const LEN: usize;
+}
+
+pub struct Constant<T>(PhantomData<fn(&mut T) -> T>);
+
+unsafe impl<T: ConstantSource> Tag for Constant<T> {}
+
 /// A valid index for all slices of the same length.
 ///
 /// While this has a generic parameter, you can only instantiate this type for specific types
@@ -431,6 +446,54 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
     }
 }
 
+#[cfg(feature = "alloc")]
+impl<T: Tag, E> Boxed<E, T> {
+    /// Try to construct an asserted box, returning it on error.
+    pub fn new(inner: alloc::boxed::Box<[E]>, len: ExactSize<T>) -> Result<Self, alloc::boxed::Box<[E]>> {
+        match Ref::new(&*inner, len) {
+            Some(_) => Ok(Boxed {
+                inner,
+                tag: len.inner.tag,
+            }),
+            None => Err(inner),
+        }
+    }
+
+    /// Reference the contents as an asserted `Ref` slice.
+    pub fn as_ref(&self) -> Ref<'_, E, T> {
+        Ref {
+            slice: &*self.inner,
+            tag: self.tag,
+        }
+    }
+
+    /// Reference the contents as an asserted mutable `Mut` slice.
+    pub fn as_mut(&mut self) -> Mut<'_, E, T> {
+        Mut {
+            slice: &mut*self.inner,
+            tag: self.tag,
+        }
+    }
+
+    /// Index the boxed slice unchecked but soundly.
+    pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
+        unsafe { self.inner.get_unchecked(index.idx) }
+    }
+
+    /// Mutably index the boxed slice unchecked but soundly.
+    pub fn get_safe_mut<I: core::slice::SliceIndex<[E]>>(
+        &mut self,
+        index: Idx<I, T>,
+    ) -> &mut I::Output {
+        unsafe { self.inner.get_unchecked_mut(index.idx) }
+    }
+
+    /// Unwrap the inner box, dropping all assertions of safe indexing.
+    pub fn into_inner(self) -> alloc::boxed::Box<[E]> {
+        self.inner
+    }
+}
+
 impl<E, T> core::ops::Deref for Ref<'_, E, T> {
     type Target = [E];
     fn deref(&self) -> &[E] {
@@ -485,6 +548,18 @@ impl<T> Clone for Named<T> {
 }
 
 impl<T> Copy for Named<T> {}
+
+impl<T> Clone for Constant<T> {
+    fn clone(&self) -> Self { *self }
+}
+
+impl<T> Copy for Constant<T> {}
+
+impl<T: ConstantSource> Constant<T> {
+    pub const EXACT_SIZE: ExactSize<Self> = 
+        // SAFETY: all instances have the same length, `LEN`.
+        unsafe { ExactSize::new_untagged(T::LEN, Constant(PhantomData)) };
+}
 
 #[cfg(test)]
 mod tests {

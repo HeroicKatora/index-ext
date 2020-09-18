@@ -19,3 +19,4 @@ keywords = ["index", "extension", "int-index", "array-index"]
 [features]
 # Activate some additional operations that require nightly
 nightly = []
+alloc = []
