@@ -44,6 +44,26 @@ fn main() {
         duration, side_effect
     );
 
+    for _ in 0..1_000 {
+        for &code in &codes {
+            let _ = compare.code_of_unchecked(code);
+        }
+    }
+    let start = std::time::Instant::now();
+    let mut side_effect = 0;
+    for _ in 0..1_000_000 {
+        for &code in &codes {
+            side_effect |= compare.code_of_unchecked(code);
+        }
+    }
+    let duration = std::time::Instant::now()
+        .duration_since(start)
+        .as_secs_f32();
+    println!(
+        "With dynamically unchecked indices: {}s ({})",
+        duration, side_effect
+    );
+
     let codes: Vec<_> = (0..BUFFER_SIZE)
         .map(|i| LEN.len().index(i).unwrap())
         .collect();
@@ -138,6 +158,21 @@ impl Comparison {
             more
         } {}
         enc
+    }
+
+    fn code_of_unchecked(&self, start: usize) -> u64 {
+        assert!(start < BUFFER_SIZE);
+        unsafe {
+            let mut enc: u64 = 0;
+            let mut code = start;
+            while {
+                enc = (enc << 8) | u64::from(*self.bytes.get_unchecked(code));
+                let more = code > 255;
+                code = *self.parents.get_unchecked(code);
+                more
+            } {}
+            enc
+        }
     }
 }
 
