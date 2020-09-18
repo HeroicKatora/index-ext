@@ -108,8 +108,7 @@ pub struct NonZeroLen<Tag> {
 /// bounds prior to the slice being available, or for creating bounds of custom tags.
 #[derive(Clone, Copy)]
 pub struct ExactSize<Tag> {
-    len: usize,
-    tag: Tag,
+    inner: Len<Tag>,
 }
 
 /// A slice with a unique lifetime.
@@ -254,6 +253,29 @@ impl<T: Tag> NonZeroLen<T> {
     }
 }
 
+impl<T> ExactSize<T> {
+    /// Construct a new bound between yet-to-create indices and slices.
+    ///
+    /// # Safety
+    ///
+    /// All `ExactSize` instances with the same tag type must also have the same `len` field.
+    pub const unsafe fn new_untagged(len: usize, tag: T) -> Self {
+        ExactSize { inner: Len { len, tag } }
+    }
+
+    /// Construct a new bound from a length.
+    ///
+    /// #Safety
+    ///
+    /// You _must_ ensure that no slice with this same tag can be shorter than `len`. In particular
+    /// there mustn't be any other `ExactSize` with a differing length.
+    ///
+    /// `T` should be a type implementing `Tag` but this can not be expressed with `const fn` atm.
+    pub const unsafe fn from_len_untagged(bound: Len<T>) -> Self {
+        ExactSize { inner: bound }
+    }
+}
+
 impl<T: Tag> ExactSize<T> {
     /// Construct a new bound between yet-to-create indices and slices.
     ///
@@ -261,7 +283,7 @@ impl<T: Tag> ExactSize<T> {
     ///
     /// All `ExactSize` instances with the same tag type must also have the same `len` field.
     pub unsafe fn new(len: usize, tag: T) -> Self {
-        ExactSize { len, tag }
+        Self::new_untagged(len, tag)
     }
 
     /// Construct a new bound from a length.
@@ -271,7 +293,7 @@ impl<T: Tag> ExactSize<T> {
     /// You _must_ ensure that no slice with this same tag can be shorter than `len`. In particular
     /// there mustn't be any other `ExactSize` with a differing length.
     pub unsafe fn from_len(len: Len<T>) -> Self {
-        ExactSize { len: len.len, tag: len.tag }
+        Self::from_len_untagged(len)
     }
 
     /// Convert this into a simple `Len` without changing the length.
@@ -280,7 +302,7 @@ impl<T: Tag> ExactSize<T> {
     /// exact separating size. As such, one can not use it to infer that some particular slice is
     /// long enough to be allowed. This is not safely reversible.
     pub fn len(self) -> Len<T> {
-        Len { len: self.len, tag: self.tag }
+        self.inner
     }
 
     /// Construct a new bound from an pair of Len and slice with the same length.
@@ -293,7 +315,7 @@ impl<T: Tag> ExactSize<T> {
     /// This method panics of `len.get()` and `slice.len()` are not equal.
     pub fn with_matching_pair<U>(len: Len<T>, slice: Ref<'_, T, U>) -> Self {
         assert_eq!(len.get(), slice.len(), "Length and slice do not define a precise size");
-        ExactSize { len: len.get(), tag: len.tag }
+        ExactSize { inner: Len { len: len.get(), tag: len.tag } }
     }
 }
 
@@ -302,11 +324,7 @@ impl<T> Named<T> {
     ///
     /// The instance is only to be encouraged to only use types private to your crate or module,
     /// this method immediately *forgets* the instance which is currently required for `const`ness.
-    ///
-    /// # Safety
-    /// This is highly unsafe. You must ensure that no other instance with the same __type__ (not
-    /// value, type) can be created by any unrelated code.
-    pub const unsafe fn new(t: T) -> Self {
+    pub const fn new(t: T) -> Self {
         core::mem::ManuallyDrop::new(t);
         Named { phantom: PhantomData, }
     }
@@ -352,10 +370,10 @@ impl<'slice, T: Tag, E> Ref<'slice, E, T> {
     /// Returns `Some(_)` if the slice is at least as long as the `size` requires, otherwise
     /// returns `None`.
     pub fn new(slice: &'slice [E], size: ExactSize<T>) -> Option<Self> {
-        if slice.len() >= size.len {
+        if slice.len() >= size.len().get() {
             Some(Ref {
                 slice,
-                tag: size.tag,
+                tag: size.inner.tag,
             })
         } else {
             None
@@ -379,10 +397,10 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
     /// Returns `Some(_)` if the slice is at least as long as the `size` requires, otherwise
     /// returns `None`.
     pub fn new(slice: &'slice mut [E], size: ExactSize<T>) -> Option<Self> {
-        if slice.len() >= size.len {
+        if slice.len() >= size.len().get() {
             Some(Mut {
                 slice,
-                tag: size.tag,
+                tag: size.inner.tag,
             })
         } else {
             None
