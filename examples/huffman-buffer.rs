@@ -24,6 +24,14 @@ fn main() {
 
     let codes: Vec<_> = (0..BUFFER_SIZE).collect();
 
+    #[cfg(target_family = "unix")]
+    unsafe {
+        let mut set: libc::cpu_set_t = core::mem::zeroed();
+        libc::CPU_ZERO(&mut set);
+        libc::CPU_SET(0, &mut set);
+        libc::sched_setaffinity(0, 1, &set);
+    }
+
     for _ in 0..1_000 {
         for &code in &codes {
             let _ = compare.code_of(code);
@@ -91,8 +99,8 @@ fn main() {
 
 /// An alternative, with standard checked indexing.
 struct Comparison {
-    parents: [usize; BUFFER_SIZE],
-    bytes: [u8; BUFFER_SIZE],
+    parents: Box<[usize; BUFFER_SIZE]>,
+    bytes: Box<[u8; BUFFER_SIZE]>,
 }
 
 impl HuffmanTree {
@@ -133,8 +141,8 @@ impl HuffmanTree {
 impl Comparison {
     pub fn new() -> Self {
         let mut c = Comparison {
-            parents: [0; BUFFER_SIZE],
-            bytes: [0; BUFFER_SIZE],
+            parents: Box::new([0; BUFFER_SIZE]),
+            bytes: Box::new([0; BUFFER_SIZE]),
         };
 
         for (p, b) in generate_parent_indices().zip(&mut c.parents[..]) {
