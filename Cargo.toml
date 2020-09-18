@@ -20,3 +20,7 @@ keywords = ["index", "extension", "int-index", "array-index"]
 # Activate some additional operations that require nightly
 nightly = []
 alloc = []
+
+[[example]]
+name = "huffman-buffer"
+required-features = ["alloc"]
