@@ -55,7 +55,10 @@ pub fn with_ref<'slice, T, U>(
         },
     };
 
-    let slice = Ref { slice, tag: len.tag };
+    let slice = Ref {
+        slice,
+        tag: len.tag,
+    };
 
     f(slice, len)
 }
@@ -66,7 +69,7 @@ pub fn with_ref<'slice, T, U>(
 /// length tag. It has no control over the exact lifetime.
 pub fn with_mut<'slice, T, U>(
     slice: &'slice mut [T],
-    f: impl for<'r> FnOnce(Mut<'slice, T, Generative<'r>>, Len<Generative<'r>>) -> U
+    f: impl for<'r> FnOnce(Mut<'slice, T, Generative<'r>>, Len<Generative<'r>>) -> U,
 ) -> U {
     let len = Len {
         len: slice.len(),
@@ -75,7 +78,10 @@ pub fn with_mut<'slice, T, U>(
         },
     };
 
-    let slice = Mut { slice, tag: len.tag };
+    let slice = Mut {
+        slice,
+        tag: len.tag,
+    };
 
     f(slice, len)
 }
@@ -173,10 +179,7 @@ impl<T: Tag> Len<T> {
     /// This method return `Some` when the index is smaller than the length.
     pub fn index(self, idx: usize) -> Option<Idx<usize, T>> {
         if idx < self.len {
-            Some(Idx {
-                idx,
-                tag: self.tag,
-            })
+            Some(Idx { idx, tag: self.tag })
         } else {
             None
         }
@@ -275,7 +278,9 @@ impl<T> ExactSize<T> {
     ///
     /// All `ExactSize` instances with the same tag type must also have the same `len` field.
     pub const unsafe fn new_untagged(len: usize, tag: T) -> Self {
-        ExactSize { inner: Len { len, tag } }
+        ExactSize {
+            inner: Len { len, tag },
+        }
     }
 
     /// Construct a new bound from a length.
@@ -334,8 +339,17 @@ impl<T: Tag> ExactSize<T> {
     /// # Panics
     /// This method panics of `len.get()` and `slice.len()` are not equal.
     pub fn with_matching_pair<U>(len: Len<T>, slice: Ref<'_, T, U>) -> Self {
-        assert_eq!(len.get(), slice.len(), "Length and slice do not define a precise size");
-        ExactSize { inner: Len { len: len.get(), tag: len.tag } }
+        assert_eq!(
+            len.get(),
+            slice.len(),
+            "Length and slice do not define a precise size"
+        );
+        ExactSize {
+            inner: Len {
+                len: len.get(),
+                tag: len.tag,
+            },
+        }
     }
 }
 
@@ -346,7 +360,9 @@ impl<T> Named<T> {
     /// this method immediately *forgets* the instance which is currently required for `const`ness.
     pub const fn new(t: T) -> Self {
         core::mem::ManuallyDrop::new(t);
-        Named { phantom: PhantomData, }
+        Named {
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -361,7 +377,7 @@ impl<T: Tag> From<NonZeroLen<T>> for Len<T> {
     }
 }
 
-impl<T, I> Idx <I, T> {
+impl<T, I> Idx<I, T> {
     /// Get the inner index.
     pub fn into_inner(self) -> I {
         self.idx
@@ -449,7 +465,10 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
 #[cfg(feature = "alloc")]
 impl<T: Tag, E> Boxed<E, T> {
     /// Try to construct an asserted box, returning it on error.
-    pub fn new(inner: alloc::boxed::Box<[E]>, len: ExactSize<T>) -> Result<Self, alloc::boxed::Box<[E]>> {
+    pub fn new(
+        inner: alloc::boxed::Box<[E]>,
+        len: ExactSize<T>,
+    ) -> Result<Self, alloc::boxed::Box<[E]>> {
         match Ref::new(&*inner, len) {
             Some(_) => Ok(Boxed {
                 inner,
@@ -470,7 +489,7 @@ impl<T: Tag, E> Boxed<E, T> {
     /// Reference the contents as an asserted mutable `Mut` slice.
     pub fn as_mut(&mut self) -> Mut<'_, E, T> {
         Mut {
-            slice: &mut*self.inner,
+            slice: &mut *self.inner,
             tag: self.tag,
         }
     }
@@ -544,19 +563,23 @@ where
 }
 
 impl<T> Clone for Named<T> {
-    fn clone(&self) -> Self { *self }
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<T> Copy for Named<T> {}
 
 impl<T> Clone for Constant<T> {
-    fn clone(&self) -> Self { *self }
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<T> Copy for Constant<T> {}
 
 impl<T: ConstantSource> Constant<T> {
-    pub const EXACT_SIZE: ExactSize<Self> = 
+    pub const EXACT_SIZE: ExactSize<Self> =
         // SAFETY: all instances have the same length, `LEN`.
         unsafe { ExactSize::new_untagged(T::LEN, Constant(PhantomData)) };
 }
@@ -590,7 +613,7 @@ mod tests {
 ///         #[allow(warnings)]
 ///         const _: fn() = || {
 ///             struct Cov<$lf, $($gen_params)*>($type_name);
-/// 
+///
 ///             fn test_cov<'__s, '__a: '__b, '__b, $($gen_params)*>(
 ///                 subtype: &'__s Cov<'__a, $($gen_params)*>,
 ///                 mut _supertype: &'__s Cov<'__b, $($gen_params)*>,
@@ -599,7 +622,7 @@ mod tests {
 ///             }
 ///         };
 ///     };
-/// 
+///
 ///     (($type_name:ty) over $lf:lifetime) => {
 ///         assert_is_covariant!(for[] ($type_name) over $lf);
 ///     };
@@ -617,7 +640,7 @@ mod tests {
 ///         #[allow(warnings)]
 ///         const _: fn() = || {
 ///             struct Contra<$lf, $($gen_params)*>($type_name);
-/// 
+///
 ///             fn test_contra<'__s, '__a: '__b, '__b, $($gen_params)*>(
 ///                 mut _subtype: &'__s Contra<'__a, $($gen_params)*>,
 ///                 supertype: &'__s Contra<'__b, $($gen_params)*>,
@@ -626,7 +649,7 @@ mod tests {
 ///             }
 ///         };
 ///     };
-/// 
+///
 ///     (($type_name:ty) over $lf:lifetime) => {
 ///         assert_is_contravariant!(for[] ($type_name) over $lf);
 ///     };
@@ -636,4 +659,4 @@ mod tests {
 ///     (tag::Len<'r>) over 'r
 /// }
 /// ```
-extern {}
+extern "C" {}
