@@ -40,7 +40,7 @@ fn main() {
         .duration_since(start)
         .as_secs_f32();
     println!(
-        "With dynamically checked indices: {}s ({})",
+        "With dynamically checked indices (safe): {}s ({})",
         duration, side_effect
     );
 
@@ -60,7 +60,7 @@ fn main() {
         .duration_since(start)
         .as_secs_f32();
     println!(
-        "With dynamically unchecked indices: {}s ({})",
+        "With dynamically unchecked indices (ad-hoc unsafe): {}s ({})",
         duration, side_effect
     );
 
@@ -84,7 +84,7 @@ fn main() {
         .duration_since(start)
         .as_secs_f32();
     println!(
-        "With dynamically checked indices: {}s ({})",
+        "With dependently checked indices (this crate): {}s ({})",
         duration, side_effect
     );
 }
