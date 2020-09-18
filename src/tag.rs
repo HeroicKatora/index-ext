@@ -45,6 +45,11 @@ unsafe impl Tag for Generative<'_> {
     }
 }
 
+/// A named unique tag.
+pub struct Named<T> {
+    phantom: PhantomData<T>,
+}
+
 /// Enter a region for soundly indexing a slice without bounds checks.
 ///
 /// The supplied function gets a freshly constructed pair of corresponding slice reference and
@@ -103,6 +108,17 @@ pub struct Len<Tag> {
 #[derive(Clone, Copy)]
 pub struct NonZeroLen<Tag> {
     len: NonZeroUsize,
+    tag: Tag,
+}
+
+/// The _exact_ length separating slices and indices for a tag.
+///
+/// This serves as an constructor basis for 'importing' lengths and slices that are not previously
+/// connected through `with_ref`. This is also useful for cases where you want to create some
+/// bounds prior to the slice being available, or for creating bounds of custom tags.
+#[derive(Clone, Copy)]
+pub struct ExactSize<Tag> {
+    len: usize,
     tag: Tag,
 }
 
@@ -248,6 +264,51 @@ impl<T: Tag> NonZeroLen<T> {
     }
 }
 
+impl<T: Tag> ExactSize<T> {
+    /// Construct a new bound between yet-to-create indices and slices.
+    ///
+    pub unsafe fn new(len: usize, tag: T) -> Self {
+        ExactSize { len, tag }
+    }
+
+    /// Construct a new bound from a length.
+    ///
+    /// #Safety
+    /// You _must_ ensure that no slice with this same tag can be shorter than `len`. In particular
+    /// there mustn't be any other `ExactSize` with a differing length.
+    pub unsafe fn from_len(len: Len<T>) -> Self {
+        ExactSize { len: len.len, tag: len.tag }
+    }
+
+    /// Convert this into a simple `Len` without changing the length.
+    ///
+    /// The `Len` is only required to be _shorter_ than all slices but not required to have the
+    /// exact separating size. As such, one can not use it to infer that some particular slice is
+    /// long enough to be allowed. This is not safely reversible.
+    pub fn len(self) -> Len<T> {
+        Len { len: self.len, tag: self.tag }
+    }
+}
+
+impl<T> Named<T> {
+    /// Create a new named tag.
+    ///
+    /// The instance is only to be encouraged to only use types private to your crate or module,
+    /// this method immediately *forgets* the instance which is currently required for `const`ness.
+    ///
+    /// # Safety
+    /// This is highly unsafe. You must ensure that no other instance with the same __type__ (not
+    /// value, type) can be created by any unrelated code.
+    pub const unsafe fn new(t: T) -> Self {
+        core::mem::ManuallyDrop::new(t);
+        Named { phantom: PhantomData, }
+    }
+}
+
+unsafe impl<T> Tag for Named<T> {
+    unsafe fn copy(&self) -> Self { *self }
+}
+
 impl<T: Tag> From<NonZeroLen<T>> for Len<T> {
     fn from(from: NonZeroLen<T>) -> Self {
         Len {
@@ -360,6 +421,12 @@ where
         self.get_safe_mut(idx)
     }
 }
+
+impl<T> Clone for Named<T> {
+    fn clone(&self) -> Self { *self }
+}
+
+impl<T> Copy for Named<T> {}
 
 #[cfg(test)]
 mod tests {
