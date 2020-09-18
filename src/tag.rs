@@ -213,6 +213,16 @@ impl<T: Tag> Len<T> {
         }
     }
 
+    /// Construct an index to a range starting at this length.
+    ///
+    /// This method might return an index for an empty range.
+    pub fn range_from_self(self) -> Idx<core::ops::RangeFrom<usize>, T> {
+        Idx {
+            idx: self.len..,
+            tag: self.tag,
+        }
+    }
+
     /// Construct an index to a range up to an element.
     ///
     /// This method return `Some` when `to` does not exceed the length.
@@ -226,6 +236,27 @@ impl<T: Tag> Len<T> {
             None
         }
     }
+
+    /// Construct an index to a range up, exclusive, to this length.
+    ///
+    /// This method might return an index for an empty range.
+    pub fn range_to_self(self) -> Idx<core::ops::RangeTo<usize>, T> {
+        Idx {
+            idx: ..self.len,
+            tag: self.tag,
+        }
+    }
+
+    /// Construct an index from one element to another.
+    ///
+    /// This method might return an index for an empty range.
+    pub fn range_between(self, other: Self) -> Idx<core::ops::Range<usize>, T> {
+        Idx {
+            idx: self.len.min(other.len)..self.len.max(other.len),
+            tag: self.tag,
+        }
+    }
+
 
     /// Construct an index to all elements.
     ///
@@ -261,6 +292,14 @@ impl<T: Tag> NonZeroLen<T> {
     pub fn last(self) -> Idx<usize, T> {
         Idx {
             idx: self.len.get() - 1,
+            tag: self.tag,
+        }
+    }
+
+    /// Construct the corresponding potentially empty length representation.
+    pub fn len(self) -> Len<T> {
+        Len {
+            len: self.len.get(),
             tag: self.tag,
         }
     }
@@ -385,6 +424,8 @@ impl<T, I> Idx<I, T> {
 }
 
 impl<T> Idx<usize, T> {
+    /// Create a smaller index.
+    #[must_use = "Returns a new index"]
     pub fn saturating_sub(self, sub: usize) -> Self {
         Idx {
             idx: self.idx.saturating_sub(sub),
@@ -392,9 +433,19 @@ impl<T> Idx<usize, T> {
         }
     }
 
+    /// Bound the index from above.
+    #[must_use = "Returns a new index"]
     pub fn truncate(self, min: usize) -> Self {
         Idx {
             idx: self.idx.min(min),
+            tag: self.tag,
+        }
+    }
+
+    /// Get a length up-to, not including this index.
+    pub fn len(self) -> Len<T> {
+        Len {
+            len: self.idx,
             tag: self.tag,
         }
     }
