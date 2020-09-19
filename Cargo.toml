@@ -16,6 +16,9 @@ keywords = ["index", "extension", "int-index", "array-index"]
 
 [dependencies]
 
+[dev-dependencies]
+libc = "0.2"
+
 [features]
 # Activate some additional operations that require nightly
 nightly = []

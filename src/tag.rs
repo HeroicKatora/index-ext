@@ -13,6 +13,7 @@
 //! Use `with_ref` and `with_mut` as the main entry constructors.
 use core::marker::PhantomData;
 use core::num::NonZeroUsize;
+use core::ops::{Range, RangeFrom, RangeTo};
 
 /// A type suitable for tagging length, indices, and containers.
 ///
@@ -170,6 +171,7 @@ pub struct Idx<I, Tag> {
 
 impl<T: Tag> Len<T> {
     /// Returns the stored length.
+    #[must_use = "Is a no-op. Use the returned length."]
     pub fn get(self) -> usize {
         self.len
     }
@@ -177,6 +179,7 @@ impl<T: Tag> Len<T> {
     /// Construct an index to a single element.
     ///
     /// This method return `Some` when the index is smaller than the length.
+    #[must_use = "Returns a new index"]
     pub fn index(self, idx: usize) -> Option<Idx<usize, T>> {
         if idx < self.len {
             Some(Idx { idx, tag: self.tag })
@@ -188,6 +191,7 @@ impl<T: Tag> Len<T> {
     /// Construct an index to a range of element.
     ///
     /// This method return `Some` when the indices are ordered and `to` does not exceed the length.
+    #[must_use = "Returns a new index"]
     pub fn range(self, from: usize, to: usize) -> Option<Idx<core::ops::Range<usize>, T>> {
         if from <= to && to <= self.len {
             Some(Idx {
@@ -202,6 +206,7 @@ impl<T: Tag> Len<T> {
     /// Construct an index to a range from an element.
     ///
     /// This method return `Some` when `from` does not exceed the length.
+    #[must_use = "Returns a new index"]
     pub fn range_from(self, from: usize) -> Option<Idx<core::ops::RangeFrom<usize>, T>> {
         if from <= self.len {
             Some(Idx {
@@ -213,9 +218,21 @@ impl<T: Tag> Len<T> {
         }
     }
 
+    /// Construct an index to a range starting at this length.
+    ///
+    /// This method might return an index for an empty range.
+    #[must_use = "Returns a new index"]
+    pub fn range_from_self(self) -> Idx<core::ops::RangeFrom<usize>, T> {
+        Idx {
+            idx: self.len..,
+            tag: self.tag,
+        }
+    }
+
     /// Construct an index to a range up to an element.
     ///
     /// This method return `Some` when `to` does not exceed the length.
+    #[must_use = "Returns a new index"]
     pub fn range_to(self, to: usize) -> Option<Idx<core::ops::RangeTo<usize>, T>> {
         if to <= self.len {
             Some(Idx {
@@ -227,13 +244,54 @@ impl<T: Tag> Len<T> {
         }
     }
 
+    /// Construct an index to a range up, exclusive, to this length.
+    ///
+    /// This method might return an index for an empty range.
+    #[must_use = "Returns a new index"]
+    pub fn range_to_self(self) -> Idx<core::ops::RangeTo<usize>, T> {
+        Idx {
+            idx: ..self.len,
+            tag: self.tag,
+        }
+    }
+
+    /// Construct an index referring to the unordered range from one element to another.
+    ///
+    /// This method might return an empty range. The order of arguments does not matter.
+    #[must_use = "Returns a new index"]
+    pub fn range_between(self, other: Self) -> Idx<core::ops::Range<usize>, T> {
+        Idx {
+            idx: self.len.min(other.len)..self.len.max(other.len),
+            tag: self.tag,
+        }
+    }
+
     /// Construct an index to all elements.
     ///
     /// This method exists mostly for completeness sake. There is no bounds check when accessing a
     /// complete slice with `..`.
+    #[must_use = "Returns a new index"]
     pub fn range_full(self) -> Idx<core::ops::RangeFull, T> {
         Idx {
             idx: ..,
+            tag: self.tag,
+        }
+    }
+
+    /// Create a smaller length.
+    #[must_use = "Returns a new index"]
+    pub fn saturating_sub(self, sub: usize) -> Self {
+        Len {
+            len: self.len.saturating_sub(sub),
+            tag: self.tag,
+        }
+    }
+
+    /// Bound the length from above.
+    #[must_use = "Returns a new index"]
+    pub fn truncate(self, min: usize) -> Self {
+        Len {
+            len: self.len.min(min),
             tag: self.tag,
         }
     }
@@ -250,6 +308,7 @@ impl<T: Tag> NonZeroLen<T> {
     }
 
     /// Construct an index to the first element of a non-empty slice.
+    #[must_use = "Returns a new index"]
     pub fn first(self) -> Idx<usize, T> {
         Idx {
             idx: 0,
@@ -258,6 +317,7 @@ impl<T: Tag> NonZeroLen<T> {
     }
 
     /// Construct an index to the last element of a non-empty slice.
+    #[must_use = "Returns a new index"]
     pub fn last(self) -> Idx<usize, T> {
         Idx {
             idx: self.len.get() - 1,
@@ -265,7 +325,17 @@ impl<T: Tag> NonZeroLen<T> {
         }
     }
 
+    /// Construct the corresponding potentially empty length representation.
+    #[must_use = "Returns a new index"]
+    pub fn len(self) -> Len<T> {
+        Len {
+            len: self.len.get(),
+            tag: self.tag,
+        }
+    }
+
     /// Get the non-zero length.
+    #[must_use = "Is a no-op. Use the returned length."]
     pub fn get(self) -> NonZeroUsize {
         self.len
     }
@@ -296,6 +366,7 @@ impl<T> ExactSize<T> {
     }
 
     /// Returns the length.
+    #[must_use = "Is a no-op. Use the returned length."]
     pub const fn get(&self) -> usize {
         self.inner.len
     }
@@ -326,6 +397,7 @@ impl<T: Tag> ExactSize<T> {
     /// The `Len` is only required to be _shorter_ than all slices but not required to have the
     /// exact separating size. As such, one can not use it to infer that some particular slice is
     /// long enough to be allowed. This is not safely reversible.
+    #[must_use = "Returns a new index"]
     pub fn len(self) -> Len<T> {
         self.inner
     }
@@ -385,6 +457,8 @@ impl<T, I> Idx<I, T> {
 }
 
 impl<T> Idx<usize, T> {
+    /// Create a smaller index.
+    #[must_use = "Returns a new index"]
     pub fn saturating_sub(self, sub: usize) -> Self {
         Idx {
             idx: self.idx.saturating_sub(sub),
@@ -392,9 +466,101 @@ impl<T> Idx<usize, T> {
         }
     }
 
+    /// Bound the index from above.
+    #[must_use = "Returns a new index"]
     pub fn truncate(self, min: usize) -> Self {
         Idx {
             idx: self.idx.min(min),
+            tag: self.tag,
+        }
+    }
+
+    /// Return the range that contains this element.
+    #[must_use = "Returns a new index"]
+    pub fn into_range(self) -> Idx<core::ops::Range<usize>, T> {
+        Idx {
+            idx: self.idx..self.idx + 1,
+            tag: self.tag,
+        }
+    }
+
+    /// Get a length up-to, not including this index.
+    #[must_use = "Returns a new index"]
+    pub fn len(self) -> Len<T> {
+        Len {
+            len: self.idx,
+            tag: self.tag,
+        }
+    }
+}
+
+impl<T> Idx<RangeTo<usize>, T> {
+    /// Get a length up-to, not including this index.
+    #[must_use = "Returns a new index"]
+    pub fn into_end(self) -> Len<T> {
+        Len {
+            len: self.idx.end,
+            tag: self.tag,
+        }
+    }
+
+    /// Construct an index starting at an element.
+    ///
+    /// This method return `Some` when `from` does not exceed the end index.
+    #[must_use = "Returns a new index"]
+    pub fn range_from(self, from: Len<T>) -> Option<Idx<core::ops::Range<usize>, T>> {
+        if from.len <= self.idx.end {
+            Some(Idx {
+                idx: from.len..self.idx.end,
+                tag: self.tag,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> Idx<RangeFrom<usize>, T> {
+    /// Get a length up-to, not including this index.
+    #[must_use = "Returns a new index"]
+    pub fn into_start(self) -> Len<T> {
+        Len {
+            len: self.idx.start,
+            tag: self.tag,
+        }
+    }
+
+    /// Construct an index up to at an element.
+    ///
+    /// This method return `Some` when `to` does not exceed the end index.
+    #[must_use = "Returns a new index"]
+    pub fn range_to(self, to: Len<T>) -> Option<Idx<core::ops::Range<usize>, T>> {
+        if to.len >= self.idx.start {
+            Some(Idx {
+                idx: self.idx.start..to.len,
+                tag: self.tag,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> Idx<Range<usize>, T> {
+    /// Get a length up-to, not including this index.
+    #[must_use = "Returns a new index"]
+    pub fn into_start(self) -> Len<T> {
+        Len {
+            len: self.idx.start,
+            tag: self.tag,
+        }
+    }
+
+    /// Get a length up-to, not including this index.
+    #[must_use = "Returns a new index"]
+    pub fn into_end(self) -> Len<T> {
+        Len {
+            len: self.idx.end,
             tag: self.tag,
         }
     }
@@ -418,6 +584,11 @@ impl<'slice, T: Tag, E> Ref<'slice, E, T> {
 
     /// Index the slice unchecked but soundly.
     pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
+        unsafe { self.slice.get_unchecked(index.idx) }
+    }
+
+    /// Index the slice unchecked but soundly.
+    pub fn into_safe<I: core::slice::SliceIndex<[E]>>(self, index: Idx<I, T>) -> &'slice I::Output {
         unsafe { self.slice.get_unchecked(index.idx) }
     }
 
@@ -448,11 +619,24 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
         unsafe { self.slice.get_unchecked(index.idx) }
     }
 
+    /// Index the slice unchecked but soundly.
+    pub fn into_safe<I: core::slice::SliceIndex<[E]>>(self, index: Idx<I, T>) -> &'slice I::Output {
+        unsafe { self.slice.get_unchecked(index.idx) }
+    }
+
     /// Mutably index the slice unchecked but soundly.
     pub fn get_safe_mut<I: core::slice::SliceIndex<[E]>>(
         &mut self,
         index: Idx<I, T>,
     ) -> &mut I::Output {
+        unsafe { self.slice.get_unchecked_mut(index.idx) }
+    }
+
+    /// Index the slice unchecked but soundly.
+    pub fn into_safe_mut<I: core::slice::SliceIndex<[E]>>(
+        self,
+        index: Idx<I, T>,
+    ) -> &'slice mut I::Output {
         unsafe { self.slice.get_unchecked_mut(index.idx) }
     }
 
@@ -496,7 +680,7 @@ impl<T: Tag, E> Boxed<E, T> {
 
     /// Index the boxed slice unchecked but soundly.
     pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
-        unsafe { self.inner.get_unchecked(index.idx) }
+        self.as_ref().into_safe(index)
     }
 
     /// Mutably index the boxed slice unchecked but soundly.
@@ -504,7 +688,7 @@ impl<T: Tag, E> Boxed<E, T> {
         &mut self,
         index: Idx<I, T>,
     ) -> &mut I::Output {
-        unsafe { self.inner.get_unchecked_mut(index.idx) }
+        self.as_mut().into_safe_mut(index)
     }
 
     /// Unwrap the inner box, dropping all assertions of safe indexing.

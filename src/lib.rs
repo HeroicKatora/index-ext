@@ -63,7 +63,8 @@
 //! `core` then this indirection would not be necessary and ergonomics would improve.
 #![no_std]
 #![cfg_attr(feature = "nightly", feature(const_generics))]
-#![cfg(feature = "alloc")]
+
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 mod sealed {
