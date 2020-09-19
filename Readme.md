@@ -36,6 +36,4 @@ let [r, g, b] = &rgba[RangeTo];
 
 ## License
 
-If you require this, then this is distributed under the terms of the [Unlicense].
-
-[Unlicense]: UNLICENSE
+Triple licensed under any of Apache-2.0, MIT, or zlib terms.
