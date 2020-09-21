@@ -1,5 +1,7 @@
 //! Not quite dependent typing for eliding bounds checks.
 //!
+//! ## Lifetime generativity
+//!
 //! The main idea is to use lifetimes as a compile time tag to identify a particular exact slice
 //! without keeping a direct reference of it. This means that you can not choose any of the
 //! lifetime parameters that you see in this module. Instead, you must be prepared to handle
@@ -10,7 +12,36 @@
 //! function boundaries by explicitly mentioning the same lifetime twice. Additionally you're
 //! allowed some mutable operations on indices that can not exceed the original bounds.
 //!
-//! Use `with_ref` and `with_mut` as the main entry constructors.
+//! Use [`with_ref`] and [`with_mut`] as the main entry constructors.
+//!
+//! [`with_ref`]: fn.with_ref.html
+//! [`with_mut`]: fn.with_mut.html
+//!
+//! ## Checked constant bounds
+//!
+//! Alternatively we can choose other unique type instances. By that we mean that for any particular
+//! type exactly _one_ value must be used to construct `ExactSize`. One possible way is if this is
+//! simply a constant which is implemented by the `Constant` wrapper and its `ConstantSource`
+//! trait. For example one may define:
+//!
+//! ```
+//! use index_ext::tag::{Constant, ConstantSource, ExactSize};
+//!
+//! const BUFFER_SIZE: usize = 4096;
+//! struct BufferSize4K;
+//!
+//! impl ConstantSource for BufferSize4K {
+//!     const LEN: usize = BUFFER_SIZE;
+//! }
+//!
+//! const LEN: ExactSize<Constant<BufferSize4K>> = Constant::EXACT_SIZE;
+//! ```
+//!
+//! ## Named bounds
+//!
+//! And finally one might come up with an internal naming scheme where types are used to express
+//! unique bounds. This requires some unsafe code and the programmers guarantee of uniqueness of
+//! values but permits the combination of runtime values with `'static` lifetime.
 use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 use core::ops::{Range, RangeFrom, RangeTo};
@@ -148,10 +179,19 @@ pub struct Boxed<T, Tag> {
     tag: Tag,
 }
 
+/// A type that names a constant buffer size.
+///
+/// See the module level documentation.
 pub trait ConstantSource {
+    /// The chosen length separating indices and slices.
     const LEN: usize;
 }
 
+/// A tag using a `ConstantSource`.
+///
+/// The only safe way to construct an `ExactSize` is by copying the associated constant which
+/// expresses the length indicated in the trait impl. This implies that the value is unique.
+/// (Disregarding unsound rustc issues that allow duplicate trait impls).
 pub struct Constant<T>(PhantomData<fn(&mut T) -> T>);
 
 unsafe impl<T: ConstantSource> Tag for Constant<T> {}
