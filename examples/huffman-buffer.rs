@@ -1,3 +1,40 @@
+/// Compare two normal styles of implementing tree traversal.
+///
+/// This uses the static `Constant` style, a dependent version with dynamic
+/// buffer sizes might also be possible but requires non-`'static` structs.
+///
+/// This implements a semi-realistic style for Huffman coding with 8-bit node
+/// arity. We have a tree in memory by storing the parent of all nodes and its
+/// relative index, which is also its output symbol. A symbol is encoded by
+/// following its path to the root and concatenating all bytes on the way. This
+/// is done in three styles, each with 1k warm up iterations and then 1M
+/// iterations summing their execution time.
+///
+/// Firstly, using safe Rust code and only the standard library. This does
+/// many of the bounds checks at runtime. Judging from the generated
+/// assembly, llvm is unable to remember (or check) that indices stored in
+/// `parent` are in-bounds of the arrays. Hence when loading them it treats
+/// them as an opaque value and does the usual checks against the length.
+///
+/// The second one uses unsafe Rust code, that one should conventionally
+/// avoid to write, asserting to the compiler that we've not stored any
+/// invalid parent indices. But this fact is not validated in any way and
+/// requires quite a lot of trust in not changing the array sizes. However,
+/// it is shown to be faster—at least on all machines I've tested it on.
+///
+/// And finally one last style that uses the library. It encodes the allowed
+/// range of indices into that special `Idx<_, Tag>` type, and they are
+/// checked at construction. But when loading them from the `parent` array
+/// we do not need to rely on llvm's ability to see their value range so we
+/// have effectively moved the index check of the access to compile time.
+/// This retains the performance of the unsafe style with the additional
+/// safety against buffer size changes.
+///
+/// The one thing to look for is the code for `code_of`/`code_of_unchecked`.
+/// The arrays parents and bytes are accessed with the `[idx]` operator in
+/// the style, with `get_unchecked` in the second and with `get_safe` in the
+/// last, otherwise their code is identical.
+///
 use index_ext::tag::{Boxed, Constant, ConstantSource, ExactSize, Idx};
 
 const BUFFER_SIZE: usize = 4096;
@@ -24,6 +61,8 @@ fn main() {
 
     let codes: Vec<_> = (0..BUFFER_SIZE).collect();
 
+    // Try to make the numbers slightly more predictable? Dynamic frequency
+    // scaling (due to heat etc.) will ruin these.
     #[cfg(target_family = "unix")]
     unsafe {
         let mut set: libc::cpu_set_t = core::mem::zeroed();
@@ -32,6 +71,7 @@ fn main() {
         libc::sched_setaffinity(0, 1, &set);
     }
 
+    // The classic, checked method.
     for _ in 0..1_000 {
         for &code in &codes {
             let _ = compare.code_of(code);
@@ -52,6 +92,7 @@ fn main() {
         duration, side_effect
     );
 
+    // The unchecked, unsafe method.
     for _ in 0..1_000 {
         for &code in &codes {
             let _ = compare.code_of_unchecked(code);
@@ -72,6 +113,7 @@ fn main() {
         duration, side_effect
     );
 
+    // The safe, type tag checked method of this library.
     let codes: Vec<_> = (0..BUFFER_SIZE)
         .map(|i| LEN.len().index(i).unwrap())
         .collect();
