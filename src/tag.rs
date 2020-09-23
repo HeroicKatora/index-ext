@@ -367,7 +367,7 @@ impl<T: Tag> NonZeroLen<T> {
 
     /// Construct the corresponding potentially empty length representation.
     #[must_use = "Returns a new index"]
-    pub fn len(self) -> Len<T> {
+    pub fn into_len(self) -> Len<T> {
         Len {
             len: self.len.get(),
             tag: self.tag,
@@ -395,7 +395,7 @@ impl<T> ExactSize<T> {
 
     /// Construct a new bound from a length.
     ///
-    /// #Safety
+    /// # Safety
     ///
     /// You _must_ ensure that no slice with this same tag can be shorter than `len`. In particular
     /// there mustn't be any other `ExactSize` with a differing length.
@@ -424,7 +424,7 @@ impl<T: Tag> ExactSize<T> {
 
     /// Construct a new bound from a length.
     ///
-    /// #Safety
+    /// # Safety
     ///
     /// You _must_ ensure that no slice with this same tag can be shorter than `len`. In particular
     /// there mustn't be any other `ExactSize` with a differing length.
@@ -438,7 +438,7 @@ impl<T: Tag> ExactSize<T> {
     /// exact separating size. As such, one can not use it to infer that some particular slice is
     /// long enough to be allowed. This is not safely reversible.
     #[must_use = "Returns a new index"]
-    pub fn len(self) -> Len<T> {
+    pub fn into_len(self) -> Len<T> {
         self.inner
     }
 
@@ -526,9 +526,21 @@ impl<T> Idx<usize, T> {
 
     /// Get a length up-to, not including this index.
     #[must_use = "Returns a new index"]
-    pub fn len(self) -> Len<T> {
+    pub fn into_len(self) -> Len<T> {
         Len {
             len: self.idx,
+            tag: self.tag,
+        }
+    }
+
+    /// Get the length beyond this index.
+    ///
+    /// Unlike turning it into a range and using its end, this guarantees that the end is non-zero
+    /// as it knows the range not to be empty.
+    #[must_use = "Returns a new index"]
+    pub fn into_end(self) -> NonZeroLen<T> {
+        NonZeroLen {
+            len: NonZeroUsize::new(self.idx + 1).unwrap(),
             tag: self.tag,
         }
     }
@@ -612,7 +624,7 @@ impl<'slice, T: Tag, E> Ref<'slice, E, T> {
     /// Returns `Some(_)` if the slice is at least as long as the `size` requires, otherwise
     /// returns `None`.
     pub fn new(slice: &'slice [E], size: ExactSize<T>) -> Option<Self> {
-        if slice.len() >= size.len().get() {
+        if slice.len() >= size.into_len().get() {
             Some(Ref {
                 slice,
                 tag: size.inner.tag,
@@ -644,7 +656,7 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
     /// Returns `Some(_)` if the slice is at least as long as the `size` requires, otherwise
     /// returns `None`.
     pub fn new(slice: &'slice mut [E], size: ExactSize<T>) -> Option<Self> {
-        if slice.len() >= size.len().get() {
+        if slice.len() >= size.into_len().get() {
             Some(Mut {
                 slice,
                 tag: size.inner.tag,

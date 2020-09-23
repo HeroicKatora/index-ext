@@ -1,8 +1,8 @@
 [package]
 name = "index-ext"
 description = "Index slices with arbitrary ints and as arrays."
-license = "Apache-2.0 OR MIT OR zlib"
-version = "0.0.1"
+license = "Apache-2.0 OR MIT OR Zlib"
+version = "0.0.2"
 authors = ["Andreas Molzer <andreas.molzer@gmx.de>"]
 edition = "2018"
 
@@ -27,3 +27,6 @@ alloc = []
 [[example]]
 name = "huffman-buffer"
 required-features = ["alloc"]
+
+[package.metadata.docs.rs]
+all-features = true
