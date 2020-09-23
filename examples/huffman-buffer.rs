@@ -115,7 +115,7 @@ fn main() {
 
     // The safe, type tag checked method of this library.
     let codes: Vec<_> = (0..BUFFER_SIZE)
-        .map(|i| LEN.len().index(i).unwrap())
+        .map(|i| LEN.into_len().index(i).unwrap())
         .collect();
 
     for _ in 0..1_000 {
@@ -148,11 +148,11 @@ struct Comparison {
 impl HuffmanTree {
     pub fn new() -> Self {
         let mut p: Vec<_> = generate_parent_indices()
-            .map(|idx| LEN.len().index(idx).unwrap())
+            .map(|idx| LEN.into_len().index(idx).unwrap())
             .collect();
 
         // Zero-extend.
-        let zero = LEN.len().index(0).unwrap();
+        let zero = LEN.into_len().index(0).unwrap();
         p.resize(BUFFER_SIZE, zero);
         let p = p.into_boxed_slice();
 
