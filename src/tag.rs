@@ -149,6 +149,22 @@ pub struct ExactSize<Tag> {
     inner: Len<Tag>,
 }
 
+/// A proof that the length if A is smaller or equal to B.
+///
+/// This guarantees that indices of `A` can also be used in `B`.
+pub struct LessEq<TagA, TagB> {
+    a: TagA,
+    b: TagB,
+}
+
+/// A proof that two tags refer to equal lengths.
+///
+/// This guarantees that indices of `A` and `B` can be used interchangeably.
+pub struct Eq<TagA, TagB> {
+    a: TagA,
+    b: TagB,
+}
+
 /// A slice with a unique lifetime.
 ///
 /// You can only construct this via [`Len::with_ref`].
@@ -461,6 +477,34 @@ impl<T: Tag> ExactSize<T> {
                 len: len.get(),
                 tag: len.tag,
             },
+        }
+    }
+}
+
+impl<A: Tag, B: Tag> Eq<A, B> {
+    /// Create an equality from evidence `a <= b <= a`.
+    pub fn new(lhs: LessEq<A, B>, _: LessEq<B, A>) -> Self {
+        Eq { a: lhs.a, b: lhs.b }
+    }
+
+    /// Swap the two tags, `a = b` iff `b = a`.
+    pub fn transpose(self) -> Eq<B, A> {
+        Eq { a: self.b, b: self.a }
+    }
+
+    /// Relax this into a less or equal relation.
+    pub fn into_le(self) -> LessEq<A, B> {
+        LessEq { a: self.a, b: self.b }
+    }
+}
+
+impl<A: Tag, B: Tag> LessEq<A, B> {
+    /// Construct the proof from the sizes of A and B.
+    pub fn with_sizes(a: ExactSize<A>, b: ExactSize<B>) -> Option<Self> {
+        if a.get() <= b.get() {
+            Some(LessEq { a: a.inner.tag, b: b.inner.tag })
+        } else {
+            None
         }
     }
 }
