@@ -466,7 +466,7 @@ impl<T: Tag> ExactSize<T> {
     ///
     /// # Panics
     /// This method panics of `len.get()` and `slice.len()` are not equal.
-    pub fn with_matching_pair<U>(len: Len<T>, slice: Ref<'_, T, U>) -> Self {
+    pub fn with_matching_pair<U>(len: Len<T>, slice: Ref<'_, U, T>) -> Self {
         assert_eq!(
             len.get(),
             slice.len(),
@@ -537,6 +537,11 @@ impl<T, I> Idx<I, T> {
     /// Get the inner index.
     pub fn into_inner(self) -> I {
         self.idx
+    }
+
+    /// Interpret this as an index into a larger slice.
+    pub fn with_tag<NewT>(self, larger: LessEq<T, NewT>) -> Idx<I, NewT> {
+        Idx { idx: self.idx, tag: larger.b }
     }
 }
 
@@ -692,6 +697,11 @@ impl<'slice, T: Tag, E> Ref<'slice, E, T> {
     pub fn into_inner(self) -> &'slice [E] {
         self.slice
     }
+
+    /// Interpret this as a slice with smaller length.
+    pub fn with_tag<NewT>(self, smaller: LessEq<NewT, T>) -> Ref<'slice, E, NewT> {
+        Ref { slice: self.slice, tag: smaller.a }
+    }
 }
 
 impl<'slice, T: Tag, E> Mut<'slice, E, T> {
@@ -739,6 +749,11 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
     /// Unwrap the inner slice, dropping all assertions of safe indexing.
     pub fn into_inner(self) -> &'slice [E] {
         self.slice
+    }
+
+    /// Interpret this as a slice with smaller length.
+    pub fn with_tag<NewT>(self, smaller: LessEq<NewT, T>) -> Mut<'slice, E, NewT> {
+        Mut { slice: self.slice, tag: smaller.a }
     }
 }
 
@@ -866,10 +881,12 @@ impl<T: ConstantSource> Constant<T> {
 
 #[cfg(test)]
 mod tests {
+    use super::{Constant, ConstantSource, Eq, ExactSize, LessEq, Mut, with_ref};
+
     #[test]
     fn basics() {
         fn problematic(buf: &mut [u8], offsets: &[u8], idx: usize) {
-            super::with_ref(&offsets[..=idx], |offsets, len| {
+            with_ref(&offsets[..=idx], |offsets, len| {
                 let mut idx = len.index(idx).unwrap();
                 for b in buf {
                     *b = idx.into_inner() as u8;
@@ -882,6 +899,34 @@ mod tests {
         let offsets = [1, 0, 2, 2];
         problematic(&mut output, &offsets[..], 3);
         assert_eq!(output, [3, 1, 1]);
+    }
+
+    #[test]
+    fn tag_switching() {
+        struct ConstantLen;
+        impl ConstantSource for ConstantLen {
+            const LEN: usize = 4;
+        }
+
+        let mut buffer = [0u8; 4];
+        let csize = Constant::<ConstantLen>::EXACT_SIZE;
+
+        let slice = Mut::new(&mut buffer[..], csize).unwrap();
+        assert_eq!(slice.len(), ConstantLen::LEN);
+        let all = csize.into_len().range_to_self();
+        
+        with_ref(&buffer[..], |slice, len| {
+            let size = ExactSize::with_matching_pair(len, slice);
+            let lesseq = LessEq::with_sizes(size, csize).unwrap();
+            let moreeq = LessEq::with_sizes(csize, size).unwrap();
+            // 'prove': csize = size
+            let eq = Eq::new(lesseq, moreeq);
+
+            // Use this to transport the index.
+            let all = all.with_tag(eq.transpose().into_le());
+            let safe = slice.get_safe(all);
+            assert_eq!(safe.len(), ConstantLen::LEN);
+        });
     }
 }
 
