@@ -62,7 +62,6 @@
 //! for the otherwise unconstrained type parameter of the generic impl. If the types were added to
 //! `core` then this indirection would not be necessary and ergonomics would improve.
 #![no_std]
-#![cfg_attr(feature = "nightly", feature(const_generics))]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
