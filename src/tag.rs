@@ -225,6 +225,18 @@ pub struct Idx<I, Tag> {
     tag: Tag,
 }
 
+/// An allocation of bounded indices that can be retrieved with a bound.
+///
+/// The usefulness comes from the fact that there is not tag on the type but instead one is
+/// assigned when retrieving the contents. In particular you don't need a unique type to construct
+/// this container.
+#[cfg(feature = "alloc")]
+pub struct IdxBox<Idx> {
+    indices: Box<[Idx]>,
+    /// The dynamic bound of indices.
+    exact_size: usize,
+}
+
 impl<T: Tag> Len<T> {
     /// Returns the stored length.
     #[must_use = "Is a no-op. Use the returned length."]
@@ -877,6 +889,55 @@ impl<T: ConstantSource> Constant<T> {
     pub const EXACT_SIZE: ExactSize<Self> =
         // SAFETY: all instances have the same length, `LEN`.
         unsafe { ExactSize::new_untagged(T::LEN, Constant(PhantomData)) };
+}
+
+#[cfg(feature = "alloc")]
+mod impl_of_boxed_idx {
+    use core::ops::{RangeFrom, RangeTo};
+
+    /// Sealed trait, quite unsafe..
+    pub trait HiddenMaxIndex {
+        fn upper_bound(this: &[Self]) -> usize;
+    }
+
+    impl HiddenMaxIndex for usize {
+        fn upper_bound(this: &[Self]) -> usize {
+            this
+                .iter()
+                .copied()
+                .max()
+                .checked_add(1)
+                .unwrap()
+        }
+    }
+
+    impl HiddenMaxIndex for RangeFrom<usize> {
+        fn upper_bound(this: &[Self]) -> usize {
+            this
+                .iter()
+                .map(|range| range.start)
+                .max()
+        }
+    }
+
+    impl HiddenMaxIndex for RangeTo<usize> {
+        fn upper_bound(this: &[Self]) -> usize {
+            this
+                .iter()
+                .map(|range| range.end)
+                .max()
+        }
+    }
+
+    impl<Idx: HiddenMaxIndex> IdxBox<Idx> {
+        pub fn new(indices: Box<Idx>) -> Self {
+            let exact_size = HiddenMaxIndex::upper_bound(&indices);
+            IdxBox {
+                indices,
+                exact_size,
+            }
+        }
+    }
 }
 
 #[cfg(test)]
