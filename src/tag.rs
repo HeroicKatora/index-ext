@@ -527,7 +527,9 @@ impl<T> Named<T> {
     /// The instance is only to be encouraged to only use types private to your crate or module,
     /// this method immediately *forgets* the instance which is currently required for `const`ness.
     pub const fn new(t: T) -> Self {
-        core::mem::ManuallyDrop::new(t);
+        // Const-fn does not allow dropping values. We don't want (and can't have) `T: Copy` so we
+        // need to statically prove this to rustc by actually removing the drop call.
+        let _ = core::mem::ManuallyDrop::new(t);
         Named {
             phantom: PhantomData,
         }
