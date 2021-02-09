@@ -501,12 +501,18 @@ impl<A: Tag, B: Tag> Eq<A, B> {
 
     /// Swap the two tags, `a = b` iff `b = a`.
     pub fn transpose(self) -> Eq<B, A> {
-        Eq { a: self.b, b: self.a }
+        Eq {
+            a: self.b,
+            b: self.a,
+        }
     }
 
     /// Relax this into a less or equal relation.
     pub fn into_le(self) -> LessEq<A, B> {
-        LessEq { a: self.a, b: self.b }
+        LessEq {
+            a: self.a,
+            b: self.b,
+        }
     }
 }
 
@@ -514,7 +520,10 @@ impl<A: Tag, B: Tag> LessEq<A, B> {
     /// Construct the proof from the sizes of A and B.
     pub fn with_sizes(a: ExactSize<A>, b: ExactSize<B>) -> Option<Self> {
         if a.get() <= b.get() {
-            Some(LessEq { a: a.inner.tag, b: b.inner.tag })
+            Some(LessEq {
+                a: a.inner.tag,
+                b: b.inner.tag,
+            })
         } else {
             None
         }
@@ -555,7 +564,10 @@ impl<T, I> Idx<I, T> {
 
     /// Interpret this as an index into a larger slice.
     pub fn with_tag<NewT>(self, larger: LessEq<T, NewT>) -> Idx<I, NewT> {
-        Idx { idx: self.idx, tag: larger.b }
+        Idx {
+            idx: self.idx,
+            tag: larger.b,
+        }
     }
 }
 
@@ -714,7 +726,10 @@ impl<'slice, T: Tag, E> Ref<'slice, E, T> {
 
     /// Interpret this as a slice with smaller length.
     pub fn with_tag<NewT>(self, smaller: LessEq<NewT, T>) -> Ref<'slice, E, NewT> {
-        Ref { slice: self.slice, tag: smaller.a }
+        Ref {
+            slice: self.slice,
+            tag: smaller.a,
+        }
     }
 }
 
@@ -767,7 +782,10 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
 
     /// Interpret this as a slice with smaller length.
     pub fn with_tag<NewT>(self, smaller: LessEq<NewT, T>) -> Mut<'slice, E, NewT> {
-        Mut { slice: self.slice, tag: smaller.a }
+        Mut {
+            slice: self.slice,
+            tag: smaller.a,
+        }
     }
 }
 
@@ -904,30 +922,19 @@ mod impl_of_boxed_idx {
 
     impl HiddenMaxIndex for usize {
         fn upper_bound(this: &[Self]) -> usize {
-            this
-                .iter()
-                .copied()
-                .max()
-                .checked_add(1)
-                .unwrap()
+            this.iter().copied().max().checked_add(1).unwrap()
         }
     }
 
     impl HiddenMaxIndex for RangeFrom<usize> {
         fn upper_bound(this: &[Self]) -> usize {
-            this
-                .iter()
-                .map(|range| range.start)
-                .max()
+            this.iter().map(|range| range.start).max()
         }
     }
 
     impl HiddenMaxIndex for RangeTo<usize> {
         fn upper_bound(this: &[Self]) -> usize {
-            this
-                .iter()
-                .map(|range| range.end)
-                .max()
+            this.iter().map(|range| range.end).max()
         }
     }
 
@@ -944,7 +951,7 @@ mod impl_of_boxed_idx {
 
 #[cfg(test)]
 mod tests {
-    use super::{Constant, ConstantSource, Eq, ExactSize, LessEq, Mut, with_ref};
+    use super::{with_ref, Constant, ConstantSource, Eq, ExactSize, LessEq, Mut};
 
     #[test]
     fn basics() {
@@ -977,7 +984,7 @@ mod tests {
         let slice = Mut::new(&mut buffer[..], csize).unwrap();
         assert_eq!(slice.len(), ConstantLen::LEN);
         let all = csize.into_len().range_to_self();
-        
+
         with_ref(&buffer[..], |slice, len| {
             let size = ExactSize::with_matching_pair(len, slice);
             let lesseq = LessEq::with_sizes(size, csize).unwrap();
