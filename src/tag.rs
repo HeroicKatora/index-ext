@@ -232,7 +232,7 @@ pub struct Idx<I, Tag> {
 /// this container.
 #[cfg(feature = "alloc")]
 pub struct IdxBox<Idx> {
-    indices: Box<[Idx]>,
+    indices: alloc::boxed::Box<[Idx]>,
     /// The dynamic bound of indices.
     exact_size: usize,
 }
@@ -913,37 +913,47 @@ impl<T: ConstantSource> Constant<T> {
 
 #[cfg(feature = "alloc")]
 mod impl_of_boxed_idx {
+    use super::IdxBox;
     use core::ops::{RangeFrom, RangeTo};
 
     /// Sealed trait, quite unsafe..
-    pub trait HiddenMaxIndex {
-        fn upper_bound(this: &[Self]) -> usize;
+    pub trait HiddenMaxIndex: Sized {
+        fn exclusive_upper_bound(this: &[Self]) -> Option<usize>;
     }
 
     impl HiddenMaxIndex for usize {
-        fn upper_bound(this: &[Self]) -> usize {
-            this.iter().copied().max().checked_add(1).unwrap()
+        fn exclusive_upper_bound(this: &[Self]) -> Option<usize> {
+            this.iter()
+                .copied()
+                .max()
+                .map_or(Some(0), |idx| idx.checked_add(1))
         }
     }
 
     impl HiddenMaxIndex for RangeFrom<usize> {
-        fn upper_bound(this: &[Self]) -> usize {
+        fn exclusive_upper_bound(this: &[Self]) -> Option<usize> {
             this.iter().map(|range| range.start).max()
         }
     }
 
     impl HiddenMaxIndex for RangeTo<usize> {
-        fn upper_bound(this: &[Self]) -> usize {
+        fn exclusive_upper_bound(this: &[Self]) -> Option<usize> {
             this.iter().map(|range| range.end).max()
         }
     }
 
     impl<Idx: HiddenMaxIndex> IdxBox<Idx> {
-        pub fn new(indices: Box<Idx>) -> Self {
-            let exact_size = HiddenMaxIndex::upper_bound(&indices);
-            IdxBox {
-                indices,
-                exact_size,
+        /// Wrap an allocation of indices.
+        /// This will fail if it not possible to express the lower bound of slices for which all
+        /// indices are valid, as a `usize`. That is, if any of the indices references the element
+        /// with index `usize::MAX` itself.
+        pub fn new(indices: alloc::boxed::Box<[Idx]>) -> Result<Self, alloc::boxed::Box<[Idx]>> {
+            match HiddenMaxIndex::exclusive_upper_bound(&indices[..]) {
+                Some(upper_bound) => Ok(IdxBox {
+                    indices,
+                    exact_size: upper_bound,
+                }),
+                None => Err(indices),
             }
         }
     }
