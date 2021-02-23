@@ -78,18 +78,20 @@ pub struct Named<T> {
 /// length tag. It has no control over the exact lifetime.
 pub fn with_ref<'slice, T, U>(
     slice: &'slice [T],
-    f: impl for<'r> FnOnce(Ref<'slice, T, Generative<'r>>, Len<Generative<'r>>) -> U,
+    f: impl for<'r> FnOnce(Ref<'slice, T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
 ) -> U {
-    let len = Len {
-        len: slice.len(),
-        tag: Generative {
-            generated: PhantomData,
-        },
+    let len = ExactSize {
+            inner: Len {
+            len: slice.len(),
+            tag: Generative {
+                generated: PhantomData,
+            },
+        }
     };
 
     let slice = Ref {
         slice,
-        tag: len.tag,
+        tag: len.inner.tag,
     };
 
     f(slice, len)
@@ -101,18 +103,20 @@ pub fn with_ref<'slice, T, U>(
 /// length tag. It has no control over the exact lifetime.
 pub fn with_mut<'slice, T, U>(
     slice: &'slice mut [T],
-    f: impl for<'r> FnOnce(Mut<'slice, T, Generative<'r>>, Len<Generative<'r>>) -> U,
+    f: impl for<'r> FnOnce(Mut<'slice, T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
 ) -> U {
-    let len = Len {
-        len: slice.len(),
-        tag: Generative {
-            generated: PhantomData,
-        },
+    let len = ExactSize {
+            inner: Len {
+            len: slice.len(),
+            tag: Generative {
+                generated: PhantomData,
+            },
+        }
     };
 
     let slice = Mut {
         slice,
-        tag: len.tag,
+        tag: len.inner.tag,
     };
 
     f(slice, len)
@@ -121,11 +125,14 @@ pub fn with_mut<'slice, T, U>(
 /// The length of a particular slice (or a number of slices).
 ///
 /// The encapsulated length field is guaranteed to be at most the length of each of the slices with
-/// the exact same lifetime. This allows this instance to construct indices that are validated to
-/// be able to soundly access the slices without required any particular slice instance. In
-/// particular, the construct might happen by a numerical algorithm independent of the slices and
-/// across method bounds where the compiler's optimizer and inline pass is no longer aware of the
-/// connection and would otherwise insert another check when the slice is indexed later.
+/// the exact same lifetime. In other words, all indices _strictly smaller_ than this number are
+/// safe.
+///
+/// This allows this instance to construct indices that are validated to be able to soundly
+/// access the slices without required any particular slice instance. In particular, the construct
+/// might happen by a numerical algorithm independent of the slices and across method bounds where
+/// the compiler's optimizer and inline pass is no longer aware of the connection and would
+/// otherwise insert another check when the slice is indexed later.
 #[derive(Clone, Copy)]
 pub struct Len<Tag> {
     len: usize,
