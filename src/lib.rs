@@ -374,7 +374,7 @@ mod test {
             ($slice:path[idx], $result:expr, for idx in [$($idx:expr),*]) => {
                 $(assert_slice_eq!(@$slice, $idx, $result);)*
             }
-        };
+        }
 
         assert_slice_eq!(slice[idx], [1, 2],
             for idx in [1u8..3, 1i8..3, 1u16..3, 1i16..3, 1u32..3, 1i32..3, 1u64..3, 1i64..3]);

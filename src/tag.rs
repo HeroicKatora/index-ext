@@ -984,7 +984,7 @@ impl<T: Tag, E> Boxed<E, T> {
     /// Get the length as a `Capacity` of all slices with this tag.
     pub fn capacity(&self) -> Capacity<T> {
         Capacity {
-            len: self.len(),
+            len: self.inner.len(),
             tag: self.tag,
         }
     }
@@ -1081,7 +1081,7 @@ impl<T: ConstantSource> Constant<T> {
 
 #[cfg(feature = "alloc")]
 mod impl_of_boxed_idx {
-    use super::IdxBox;
+    use super::{ExactSize, Idx, IdxBox, Len, Tag};
     use core::ops::{RangeFrom, RangeTo};
 
     /// Sealed trait, quite unsafe..
@@ -1110,18 +1110,85 @@ mod impl_of_boxed_idx {
         }
     }
 
-    impl<Idx: HiddenMaxIndex> IdxBox<Idx> {
+    impl<I: HiddenMaxIndex> IdxBox<I> {
         /// Wrap an allocation of indices.
         /// This will fail if it not possible to express the lower bound of slices for which all
         /// indices are valid, as a `usize`. That is, if any of the indices references the element
         /// with index `usize::MAX` itself.
-        pub fn new(indices: alloc::boxed::Box<[Idx]>) -> Result<Self, alloc::boxed::Box<[Idx]>> {
+        pub fn new(indices: alloc::boxed::Box<[I]>) -> Result<Self, alloc::boxed::Box<[I]>> {
             match HiddenMaxIndex::exclusive_upper_bound(&indices[..]) {
                 Some(upper_bound) => Ok(IdxBox {
                     indices,
                     exact_size: upper_bound,
                 }),
                 None => Err(indices),
+            }
+        }
+
+        /// Return the upper bound over all indices.
+        /// This is not guaranteed to be the _least_ upper bound.
+        pub fn bound(&self) -> usize {
+            self.exact_size
+        }
+
+        /// Ensure that the stored `bound` is at least `min`.
+        pub fn ensure(&mut self, min: usize) {
+            self.exact_size = self.exact_size.max(min);
+        }
+
+        /// Set the bound to the least upper bound of all indices.
+        ///
+        /// This always reduces the `bound` and there can not be any lower bound that is consistent
+        /// with all indices stored in this `IdxBox`.
+        pub fn truncate(&mut self) {
+            let least_bound = HiddenMaxIndex::exclusive_upper_bound(&self.indices)
+                // All mutation was performed under some concrete upper bound, and current elements
+                // must still be bounded by the largest such bound.
+                .expect("Some upper bound must still apply");
+            debug_assert!(self.exact_size >= least_bound,
+                "The exact size was corrupted to be below the least bound.");
+            self.exact_size = least_bound;
+        }
+
+        /// Reinterpret the contents as indices of a given tag.
+        ///
+        /// The given size must not be smaller than the `bound` of this allocated. This guarantees
+        /// that all indices within the box are valid for the Tag. Since you can only _view_ the
+        /// indices, they will remain valid.
+        pub fn as_ref<T: Tag>(&self, size: Len<T>) -> Option<&'_ [Idx<I, T>]> {
+            if size.get() >= self.exact_size {
+                Some(unsafe {
+                    // SAFETY: `Idx` is a transparent wrapper around `I`, the type of this slice,
+                    // and the type `T` is a ZST. The instance `size.tag` also proofs that this ZST
+                    // is inhabited and it is Copy as per requirements of `Tag`. The index is
+                    // smaller than the ExactSize corresponding to `T` by transitivity over `size`.
+                    let content: *const [I] = &self.indices[..];
+                    &*(content as *const [Idx::<I, T>])
+                })
+            } else {
+                None
+            }
+        }
+
+        /// Reinterpret the contents as mutable indices of a given tag.
+        ///
+        /// The given exact size must not be exactly the same as the `bound` of this allocated
+        /// slice. This guarantees that all indices within the box are valid for the Tag, and that
+        /// all stored indices will be valid for all future tags.
+        pub fn as_mut<T: Tag>(&mut self, size: ExactSize<T>) -> Option<&'_ mut [Idx<I, T>]> {
+            if size.get() == self.exact_size {
+                Some(unsafe {
+                    // SAFETY: `Idx` is a transparent wrapper around `I`, the type of this slice,
+                    // and the type `T` is a ZST. The instance `size.tag` also proofs that this ZST
+                    // is inhabited and it is Copy as per requirements of `Tag`. The index is
+                    // smaller than the ExactSize corresponding to `T` by transitivity over `size`.
+                    // Also any instance written will be smaller than `self.exact_size`,
+                    // guaranteeing that the invariants of this type hold afterwards.
+                    let content: *mut [I] = &mut self.indices[..];
+                    &mut *(content as *mut [Idx::<I, T>])
+                })
+            } else {
+                None
             }
         }
     }
@@ -1196,6 +1263,51 @@ mod tests {
             "Small is in fact less than large");
         assert!(LessEq::with_pair(large.into_capacity(), small.into_len()).is_none(),
             "Large should not appear less than small");
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn idx_boxing() {
+        use super::IdxBox;
+        use alloc::boxed::Box;
+
+        struct ExactBound;
+        struct LargerBound;
+
+        impl ConstantSource for ExactBound {
+            const LEN: usize = 3;
+        }
+
+        impl ConstantSource for LargerBound {
+            const LEN: usize = 4;
+        }
+
+        let indices = Box::from([0, 1, 2]);
+
+        let mut boxed = IdxBox::new(indices)
+            .expect("Have a valid upper bound");
+        assert_eq!(boxed.bound(), <ExactBound as ConstantSource>::LEN);
+
+        let exact = Constant::<ExactBound>::EXACT_SIZE;
+        boxed.as_ref(exact.into_len()).expect("A valid upper bound");
+        let larger = Constant::<LargerBound>::EXACT_SIZE;
+        boxed.as_ref(larger.into_len()).expect("A valid upper bound");
+
+        boxed.as_mut(exact).expect("A valid exact bound");
+        assert!(boxed.as_mut(larger).is_none(), "An invalid exact bound");
+
+        // Now increase the bound
+        boxed.ensure(larger.get());
+        assert_eq!(boxed.bound(), <LargerBound as ConstantSource>::LEN);
+        assert!(boxed.as_mut(exact).is_none(), "No longer a valid exact bound");
+        boxed.as_mut(larger).expect("Now a valid exact bound");
+
+        // But we've not _actually_ changed any index, so go back.
+        boxed.truncate();
+        assert_eq!(boxed.bound(), <ExactBound as ConstantSource>::LEN);
+
+        boxed.as_mut(exact).expect("A valid exact bound");
+        assert!(boxed.as_mut(larger).is_none(), "An invalid exact bound");
     }
 }
 

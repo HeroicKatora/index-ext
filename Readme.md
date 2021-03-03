@@ -32,7 +32,7 @@ use index_ext::tag;
 
 tag::with_ref(&[0, 1, 2, 3][..], |slice, len| {
   // Index construction is checked/fallible..
-  let idx = len.index(2).unwrap();
+  let idx = len.into_len().index(2).unwrap();
 
   // But use is NOT. The method get_safe does no runtime checks.
   assert_eq!(*slice.get_safe(idx), 2);
