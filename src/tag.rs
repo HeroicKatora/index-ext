@@ -1159,7 +1159,7 @@ mod impl_of_boxed_idx {
             if size.get() >= self.exact_size {
                 Some(unsafe {
                     // SAFETY: `Idx` is a transparent wrapper around `I`, the type of this slice,
-                    // and the type `T` is a ZST. The instance `size.tag` also proofs that this ZST
+                    // and the type `T` is a ZST. The instance `size.tag` also proves that this ZST
                     // is inhabited and it is Copy as per requirements of `Tag`. The index is
                     // smaller than the ExactSize corresponding to `T` by transitivity over `size`.
                     let content: *const [I] = &self.indices[..];
@@ -1179,7 +1179,7 @@ mod impl_of_boxed_idx {
             if size.get() == self.exact_size {
                 Some(unsafe {
                     // SAFETY: `Idx` is a transparent wrapper around `I`, the type of this slice,
-                    // and the type `T` is a ZST. The instance `size.tag` also proofs that this ZST
+                    // and the type `T` is a ZST. The instance `size.tag` also proves that this ZST
                     // is inhabited and it is Copy as per requirements of `Tag`. The index is
                     // smaller than the ExactSize corresponding to `T` by transitivity over `size`.
                     // Also any instance written will be smaller than `self.exact_size`,

@@ -22,7 +22,7 @@ assert_eq!(buffer.get_int(u128::max_value()), None);
 ## Statically checked indices
 
 The concept of tags, a type identifying a unique slice length, allows one to
-proof through the type system that some integer is a valid index for a slice.
+prove through the type system that some integer is a valid index for a slice.
 There are two ways to use it safely, by borrowing the original slice and
 generative lifetimes or by using compile time constants, and one way to
 unsafely use arbitrary types.
