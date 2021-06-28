@@ -390,6 +390,12 @@ macro_rules! slice_index {
 (@$t:ty) => {
     impl sealed::IntoIntIndex for $t {
         type IntoIndex = usize;
+        // Clippy warns within here:
+        // > warning: question mark operator is useless here
+        //
+        // This is a 'false-positive' since this question mark not useless in all macro invocation.
+        // For `$t = usize` we have `Err=Infallible` instead.
+        #[allow(clippy::needless_question_mark)]
         fn index(self) -> Result<usize, TryFromIntError> {
             Ok(self.try_into()?)
         }
