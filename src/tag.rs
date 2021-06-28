@@ -523,6 +523,22 @@ impl<T> ExactSize<T> {
     }
 }
 
+impl<'lt> ExactSize<Generative<'lt>> {
+    /// Construct a size with a generative guard.
+    ///
+    /// The `Guard` instance is a token that verifies that no other instance with that particular
+    /// lifetime exists. It is thus not possible to safely construct a second `ExactSize` with the
+    /// same tag but a different length. This uniquely ties the value `len` to that lifetime.
+    pub fn with_guard(len: usize, _: generativity::Guard<'lt>) -> Self {
+        ExactSize {
+            inner: Len {
+                len,
+                tag: Generative { generated: PhantomData },
+            }
+        }
+    }
+}
+
 impl<T: Tag> ExactSize<T> {
     /// Construct a new bound between yet-to-create indices and slices.
     ///
