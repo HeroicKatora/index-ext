@@ -65,6 +65,7 @@ pub struct Generative<'lt> {
 }
 
 /// SAFETY: This is invariant over the lifetime. There are no other coercions.
+/// See <https://doc.rust-lang.org/nomicon/coercions.html#coercions>
 unsafe impl Tag for Generative<'_> {}
 
 /// A named unique tag.
@@ -75,21 +76,23 @@ pub struct Named<T> {
 /// Enter a region for soundly indexing a slice without bounds checks.
 ///
 /// The supplied function gets a freshly constructed pair of corresponding slice reference and
-/// length tag. It has no control over the exact lifetime.
+/// length tag. It has no control over the exact lifetime used for the tag.
 pub fn with_ref<'slice, T, U>(
     slice: &'slice [T],
-    f: impl for<'r> FnOnce(Ref<'slice, T, Generative<'r>>, Len<Generative<'r>>) -> U,
+    f: impl for<'r> FnOnce(Ref<'slice, T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
 ) -> U {
-    let len = Len {
-        len: slice.len(),
-        tag: Generative {
-            generated: PhantomData,
+    let len = ExactSize {
+        inner: Len {
+            len: slice.len(),
+            tag: Generative {
+                generated: PhantomData,
+            },
         },
     };
 
     let slice = Ref {
         slice,
-        tag: len.tag,
+        tag: len.inner.tag,
     };
 
     f(slice, len)
@@ -98,21 +101,23 @@ pub fn with_ref<'slice, T, U>(
 /// Enter a region for soundly indexing a mutable slice without bounds checks.
 ///
 /// The supplied function gets a freshly constructed pair of corresponding slice reference and
-/// length tag. It has no control over the exact lifetime.
+/// length tag. It has no control over the exact lifetime used for the tag.
 pub fn with_mut<'slice, T, U>(
     slice: &'slice mut [T],
-    f: impl for<'r> FnOnce(Mut<'slice, T, Generative<'r>>, Len<Generative<'r>>) -> U,
+    f: impl for<'r> FnOnce(Mut<'slice, T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
 ) -> U {
-    let len = Len {
-        len: slice.len(),
-        tag: Generative {
-            generated: PhantomData,
+    let len = ExactSize {
+        inner: Len {
+            len: slice.len(),
+            tag: Generative {
+                generated: PhantomData,
+            },
         },
     };
 
     let slice = Mut {
         slice,
-        tag: len.tag,
+        tag: len.inner.tag,
     };
 
     f(slice, len)
@@ -121,13 +126,27 @@ pub fn with_mut<'slice, T, U>(
 /// The length of a particular slice (or a number of slices).
 ///
 /// The encapsulated length field is guaranteed to be at most the length of each of the slices with
-/// the exact same lifetime. This allows this instance to construct indices that are validated to
-/// be able to soundly access the slices without required any particular slice instance. In
-/// particular, the construct might happen by a numerical algorithm independent of the slices and
-/// across method bounds where the compiler's optimizer and inline pass is no longer aware of the
-/// connection and would otherwise insert another check when the slice is indexed later.
+/// the exact same tag. In other words, all indices _strictly smaller_ than this number are
+/// safe.
+///
+/// This allows this instance to construct indices that are validated to be able to soundly
+/// access the slices without required any particular slice instance. In particular, the construct
+/// might happen by a numerical algorithm independent of the slices and across method bounds where
+/// the compiler's optimizer and inline pass is no longer aware of the connection and would
+/// otherwise insert another check when the slice is indexed later.
 #[derive(Clone, Copy)]
 pub struct Len<Tag> {
+    len: usize,
+    tag: Tag,
+}
+
+/// A number that overestimates the guaranteed size of a number of slices.
+///
+/// This is the counter part of [`Len`]. It encapsulates a field that is guaranteed to be at least
+/// the size of all indices with the exact same tag. In other words, all slices at least as long
+/// as this number are safe to be accessed by indices.
+#[derive(Clone, Copy)]
+pub struct Capacity<Tag> {
     len: usize,
     tag: Tag,
 }
@@ -149,7 +168,25 @@ pub struct ExactSize<Tag> {
     inner: Len<Tag>,
 }
 
-/// A slice with a unique lifetime.
+/// A proof that the length if A is smaller or equal to B.
+///
+/// This guarantees that indices of `A` can also be used in `B`.
+#[derive(Clone, Copy)]
+pub struct LessEq<TagA, TagB> {
+    a: TagA,
+    b: TagB,
+}
+
+/// A proof that two tags refer to equal lengths.
+///
+/// This guarantees that indices of `A` and `B` can be used interchangeably.
+#[derive(Clone, Copy)]
+pub struct Eq<TagA, TagB> {
+    a: TagA,
+    b: TagB,
+}
+
+/// A slice with a unique type tag.
 ///
 /// You can only construct this via [`Len::with_ref`].
 ///
@@ -161,7 +198,7 @@ pub struct Ref<'slice, T, Tag> {
     tag: Tag,
 }
 
-/// A mutable slice with a unique lifetime.
+/// A mutable slice with a unique type tag.
 ///
 /// You can only construct this via [`Len::with_mut`].
 ///
@@ -209,7 +246,29 @@ pub struct Idx<I, Tag> {
     tag: Tag,
 }
 
+/// An allocation of bounded indices that can be retrieved with a bound.
+///
+/// The usefulness comes from the fact that there is not tag on the type but instead one is
+/// assigned when retrieving the contents. In particular you don't need a unique type to construct
+/// this container.
+#[cfg(feature = "alloc")]
+pub struct IdxBox<Idx> {
+    indices: alloc::boxed::Box<[Idx]>,
+    /// The dynamic bound of indices.
+    exact_size: usize,
+}
+
 impl<T: Tag> Len<T> {
+    /// Interpret this with the tag of a set of potentially longer slices.
+    ///
+    /// The proof of inequality was performed in any of the possible constructors that allow the
+    /// instance of `LessEq` to exist in the first place.
+    pub fn with_tag<NewT>(self, less: LessEq<T, NewT>) -> Len<NewT> {
+        let len = self.len;
+        let tag = less.b;
+        Len { len, tag }
+    }
+
     /// Returns the stored length.
     #[must_use = "Is a no-op. Use the returned length."]
     pub fn get(self) -> usize {
@@ -337,6 +396,42 @@ impl<T: Tag> Len<T> {
     }
 }
 
+impl<T: Tag> Capacity<T> {
+    /// Interpret this with the tag of a set of potentially shorter slices.
+    ///
+    /// The proof of inequality was performed in any of the possible constructors that allow the
+    /// instance of `LessEq` to exist in the first place.
+    pub fn with_tag<NewT>(self, less: LessEq<NewT, T>) -> Capacity<NewT> {
+        let len = self.len;
+        let tag = less.a;
+        Capacity { len, tag }
+    }
+
+    /// Returns the stored length.
+    #[must_use = "Is a no-op. Use the returned length."]
+    pub fn get(self) -> usize {
+        self.len
+    }
+
+    /// Create a larger capacity.
+    #[must_use = "Returns a new capacity"]
+    pub fn saturating_add(self, add: usize) -> Self {
+        Capacity {
+            len: self.len.saturating_add(add),
+            tag: self.tag,
+        }
+    }
+
+    /// Bound the length from below.
+    #[must_use = "Returns a new capacity"]
+    pub fn ensure(self, min: usize) -> Self {
+        Capacity {
+            len: self.len.max(min),
+            tag: self.tag,
+        }
+    }
+}
+
 impl<T: Tag> NonZeroLen<T> {
     /// Construct the length of a non-empty slice.
     pub fn new(complete: Len<T>) -> Option<Self> {
@@ -345,6 +440,16 @@ impl<T: Tag> NonZeroLen<T> {
             len,
             tag: complete.tag,
         })
+    }
+
+    /// Interpret this with the tag of a potentially longer slice.
+    ///
+    /// The proof of inequality was performed in any of the possible constructors that allow the
+    /// instance of `LessEq` to exist in the first place.
+    pub fn with_tag<NewT>(self, less: LessEq<T, NewT>) -> NonZeroLen<NewT> {
+        let len = self.len;
+        let tag = less.b;
+        NonZeroLen { len, tag }
     }
 
     /// Construct an index to the first element of a non-empty slice.
@@ -381,6 +486,12 @@ impl<T: Tag> NonZeroLen<T> {
     }
 }
 
+/// The const methods for `ExactSize`.
+///
+/// Since trait bounds are not currently usable on stable the selection is limited. **Note**: It is
+/// of importance to soundness that it is not possible to construct an instance without the `Tag`
+/// bound. Otherwise, one might coerce _into_ an `ExactSize` with an improper tag. This is not
+/// likely to be possible but nevertheless the `Tag` does not require it to be impossible.
 impl<T> ExactSize<T> {
     /// Construct a new bound between yet-to-create indices and slices.
     ///
@@ -412,6 +523,24 @@ impl<T> ExactSize<T> {
     }
 }
 
+impl<'lt> ExactSize<Generative<'lt>> {
+    /// Construct a size with a generative guard.
+    ///
+    /// The `Guard` instance is a token that verifies that no other instance with that particular
+    /// lifetime exists. It is thus not possible to safely construct a second `ExactSize` with the
+    /// same tag but a different length. This uniquely ties the value `len` to that lifetime.
+    pub fn with_guard(len: usize, _: generativity::Guard<'lt>) -> Self {
+        ExactSize {
+            inner: Len {
+                len,
+                tag: Generative {
+                    generated: PhantomData,
+                },
+            },
+        }
+    }
+}
+
 impl<T: Tag> ExactSize<T> {
     /// Construct a new bound between yet-to-create indices and slices.
     ///
@@ -432,9 +561,31 @@ impl<T: Tag> ExactSize<T> {
         Self::from_len_untagged(len)
     }
 
+    /// Construct a new bound from a capacity.
+    ///
+    /// # Safety
+    ///
+    /// You _must_ ensure that no index with this same tag can be above `cap`. In particular there
+    /// mustn't be any other `ExactSize` with a differing length but the same tag type.
+    pub unsafe fn from_capacity(cap: Capacity<T>) -> Self {
+        Self::new_untagged(cap.len, cap.tag)
+    }
+
+    /// Interpret this with the tag of an equal sized slice.
+    ///
+    /// The proof of equality was performed in any of the possible constructors that allow the
+    /// instance of `Eq` to exist in the first place.
+    pub fn with_tag<NewT>(self, equality: Eq<T, NewT>) -> ExactSize<NewT> {
+        let len = self.inner.len;
+        let tag = equality.b;
+        ExactSize {
+            inner: Len { len, tag },
+        }
+    }
+
     /// Convert this into a simple `Len` without changing the length.
     ///
-    /// The `Len` is only required to be _shorter_ than all slices but not required to have the
+    /// The `Len` is only required to be _not longer_ than all slices but not required to have the
     /// exact separating size. As such, one can not use it to infer that some particular slice is
     /// long enough to be allowed. This is not safely reversible.
     #[must_use = "Returns a new index"]
@@ -442,25 +593,99 @@ impl<T: Tag> ExactSize<T> {
         self.inner
     }
 
-    /// Construct a new bound from an pair of Len and slice with the same length.
+    /// Convert this into a simple `Capacity` without changing the length.
+    ///
+    /// The `Capacity` is only required to be _not shorter_ than all slices but not required to
+    /// have the exact separating size. As such, one can use it only to infer that some particular
+    /// slice is long enough to be allowed. This is not safely reversible.
+    #[must_use = "Returns a new index"]
+    pub fn into_capacity(self) -> Capacity<T> {
+        Capacity {
+            len: self.inner.len,
+            tag: self.inner.tag,
+        }
+    }
+
+    /// Construct a new bound from an pair of Len and Capacity with the same value.
     ///
     /// Note that the invariant of `ExactSize` is that all `Len` are guaranteed to be at most the
-    /// size and all `Ref` and `RefMut` are guaranteed to be at least the size. The only possible
-    /// overlap between the two is the exact slice length, which we can dynamically check.
+    /// size and all `Capacity` are guaranteed to be at least the size. The only possible overlap
+    /// between the two is the exact length, which we can dynamically check.
+    pub fn with_matching_pair(len: Len<T>, cap: Capacity<T>) -> Option<Self> {
+        if len.get() == cap.get() {
+            Some(ExactSize {
+                inner: Len {
+                    len: len.get(),
+                    tag: len.tag,
+                },
+            })
+        } else {
+            None
+        }
+    }
+}
+
+impl<A: Tag> Eq<A, A> {
+    /// Construct the reflexive proof.
+    pub fn reflexive(tag: A) -> Self {
+        Eq { a: tag, b: tag }
+    }
+}
+
+impl<A: Tag, B: Tag> Eq<A, B> {
+    /// Create an equality from evidence `a <= b <= a`.
+    pub fn new(lhs: LessEq<A, B>, _: LessEq<B, A>) -> Self {
+        Eq { a: lhs.a, b: lhs.b }
+    }
+
+    /// Swap the two tags, `a = b` iff `b = a`.
+    pub fn transpose(self) -> Eq<B, A> {
+        Eq {
+            a: self.b,
+            b: self.a,
+        }
+    }
+
+    /// Relax this into a less or equal relation.
+    pub fn into_le(self) -> LessEq<A, B> {
+        LessEq {
+            a: self.a,
+            b: self.b,
+        }
+    }
+}
+
+impl<A: Tag> LessEq<A, A> {
+    /// Construct the reflexive proof.
+    pub fn reflexive(tag: A) -> Self {
+        LessEq { a: tag, b: tag }
+    }
+}
+
+impl<A: Tag, B: Tag> LessEq<A, B> {
+    /// Construct the proof from the sizes of A and B.
+    pub fn with_sizes(a: ExactSize<A>, b: ExactSize<B>) -> Option<Self> {
+        if a.get() <= b.get() {
+            Some(LessEq {
+                a: a.inner.tag,
+                b: b.inner.tag,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Construct the proof from a pair of bounds for A and B.
     ///
-    /// # Panics
-    /// This method panics of `len.get()` and `slice.len()` are not equal.
-    pub fn with_matching_pair<U>(len: Len<T>, slice: Ref<'_, T, U>) -> Self {
-        assert_eq!(
-            len.get(),
-            slice.len(),
-            "Length and slice do not define a precise size"
-        );
-        ExactSize {
-            inner: Len {
-                len: len.get(),
-                tag: len.tag,
-            },
+    /// The `Capacity` upper bounds all indices applicable to A, and the exact size. The `Len`
+    /// lower bounds all lengths and the exact size.
+    ///
+    /// This returns `Some` when the lower bound for B is not smaller than the upper bound for A.
+    pub fn with_pair(a: Capacity<A>, b: Len<B>) -> Option<Self> {
+        if b.get() >= a.get() {
+            Some(LessEq { a: a.tag, b: b.tag })
+        } else {
+            None
         }
     }
 }
@@ -471,7 +696,9 @@ impl<T> Named<T> {
     /// The instance is only to be encouraged to only use types private to your crate or module,
     /// this method immediately *forgets* the instance which is currently required for `const`ness.
     pub const fn new(t: T) -> Self {
-        core::mem::ManuallyDrop::new(t);
+        // Const-fn does not allow dropping values. We don't want (and can't have) `T: Copy` so we
+        // need to statically prove this to rustc by actually removing the drop call.
+        let _ = core::mem::ManuallyDrop::new(t);
         Named {
             phantom: PhantomData,
         }
@@ -493,6 +720,14 @@ impl<T, I> Idx<I, T> {
     /// Get the inner index.
     pub fn into_inner(self) -> I {
         self.idx
+    }
+
+    /// Interpret this as an index into a larger slice.
+    pub fn with_tag<NewT>(self, larger: LessEq<T, NewT>) -> Idx<I, NewT> {
+        Idx {
+            idx: self.idx,
+            tag: larger.b,
+        }
     }
 }
 
@@ -634,6 +869,14 @@ impl<'slice, T: Tag, E> Ref<'slice, E, T> {
         }
     }
 
+    /// Get the length as a `Capacity` of all slices with this tag.
+    pub fn capacity(&self) -> Capacity<T> {
+        Capacity {
+            len: self.len(),
+            tag: self.tag,
+        }
+    }
+
     /// Index the slice unchecked but soundly.
     pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
         unsafe { self.slice.get_unchecked(index.idx) }
@@ -647,6 +890,14 @@ impl<'slice, T: Tag, E> Ref<'slice, E, T> {
     /// Unwrap the inner slice, dropping all assertions of safe indexing.
     pub fn into_inner(self) -> &'slice [E] {
         self.slice
+    }
+
+    /// Interpret this as a slice with smaller length.
+    pub fn with_tag<NewT>(self, smaller: LessEq<NewT, T>) -> Ref<'slice, E, NewT> {
+        Ref {
+            slice: self.slice,
+            tag: smaller.a,
+        }
     }
 }
 
@@ -663,6 +914,14 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
             })
         } else {
             None
+        }
+    }
+
+    /// Get the length as a `Capacity` of all slices with this tag.
+    pub fn capacity(&self) -> Capacity<T> {
+        Capacity {
+            len: self.len(),
+            tag: self.tag,
         }
     }
 
@@ -696,11 +955,21 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
     pub fn into_inner(self) -> &'slice [E] {
         self.slice
     }
+
+    /// Interpret this as a slice with smaller length.
+    pub fn with_tag<NewT>(self, smaller: LessEq<NewT, T>) -> Mut<'slice, E, NewT> {
+        Mut {
+            slice: self.slice,
+            tag: smaller.a,
+        }
+    }
 }
 
 #[cfg(feature = "alloc")]
 impl<T: Tag, E> Boxed<E, T> {
     /// Try to construct an asserted box, returning it on error.
+    ///
+    /// The box slice must have _exactly_ the length indicated.
     pub fn new(
         inner: alloc::boxed::Box<[E]>,
         len: ExactSize<T>,
@@ -726,6 +995,14 @@ impl<T: Tag, E> Boxed<E, T> {
     pub fn as_mut(&mut self) -> Mut<'_, E, T> {
         Mut {
             slice: &mut *self.inner,
+            tag: self.tag,
+        }
+    }
+
+    /// Get the length as a `Capacity` of all slices with this tag.
+    pub fn capacity(&self) -> Capacity<T> {
+        Capacity {
+            len: self.inner.len(),
             tag: self.tag,
         }
     }
@@ -820,13 +1097,132 @@ impl<T: ConstantSource> Constant<T> {
         unsafe { ExactSize::new_untagged(T::LEN, Constant(PhantomData)) };
 }
 
+#[cfg(feature = "alloc")]
+mod impl_of_boxed_idx {
+    use super::{ExactSize, Idx, IdxBox, Len, Tag};
+    use core::ops::{RangeFrom, RangeTo};
+
+    /// Sealed trait, quite unsafe..
+    pub trait HiddenMaxIndex: Sized {
+        fn exclusive_upper_bound(this: &[Self]) -> Option<usize>;
+    }
+
+    impl HiddenMaxIndex for usize {
+        fn exclusive_upper_bound(this: &[Self]) -> Option<usize> {
+            this.iter()
+                .copied()
+                .max()
+                .map_or(Some(0), |idx| idx.checked_add(1))
+        }
+    }
+
+    impl HiddenMaxIndex for RangeFrom<usize> {
+        fn exclusive_upper_bound(this: &[Self]) -> Option<usize> {
+            this.iter().map(|range| range.start).max()
+        }
+    }
+
+    impl HiddenMaxIndex for RangeTo<usize> {
+        fn exclusive_upper_bound(this: &[Self]) -> Option<usize> {
+            this.iter().map(|range| range.end).max()
+        }
+    }
+
+    impl<I: HiddenMaxIndex> IdxBox<I> {
+        /// Wrap an allocation of indices.
+        /// This will fail if it not possible to express the lower bound of slices for which all
+        /// indices are valid, as a `usize`. That is, if any of the indices references the element
+        /// with index `usize::MAX` itself.
+        pub fn new(indices: alloc::boxed::Box<[I]>) -> Result<Self, alloc::boxed::Box<[I]>> {
+            match HiddenMaxIndex::exclusive_upper_bound(&indices[..]) {
+                Some(upper_bound) => Ok(IdxBox {
+                    indices,
+                    exact_size: upper_bound,
+                }),
+                None => Err(indices),
+            }
+        }
+
+        /// Return the upper bound over all indices.
+        /// This is not guaranteed to be the _least_ upper bound.
+        pub fn bound(&self) -> usize {
+            self.exact_size
+        }
+
+        /// Ensure that the stored `bound` is at least `min`.
+        pub fn ensure(&mut self, min: usize) {
+            self.exact_size = self.exact_size.max(min);
+        }
+
+        /// Set the bound to the least upper bound of all indices.
+        ///
+        /// This always reduces the `bound` and there can not be any lower bound that is consistent
+        /// with all indices stored in this `IdxBox`.
+        pub fn truncate(&mut self) {
+            let least_bound = HiddenMaxIndex::exclusive_upper_bound(&self.indices)
+                // All mutation was performed under some concrete upper bound, and current elements
+                // must still be bounded by the largest such bound.
+                .expect("Some upper bound must still apply");
+            debug_assert!(
+                self.exact_size >= least_bound,
+                "The exact size was corrupted to be below the least bound."
+            );
+            self.exact_size = least_bound;
+        }
+
+        /// Reinterpret the contents as indices of a given tag.
+        ///
+        /// The given size must not be smaller than the `bound` of this allocated. This guarantees
+        /// that all indices within the box are valid for the Tag. Since you can only _view_ the
+        /// indices, they will remain valid.
+        pub fn as_ref<T: Tag>(&self, size: Len<T>) -> Option<&'_ [Idx<I, T>]> {
+            if size.get() >= self.exact_size {
+                Some(unsafe {
+                    // SAFETY: `Idx` is a transparent wrapper around `I`, the type of this slice,
+                    // and the type `T` is a ZST. The instance `size.tag` also proves that this ZST
+                    // is inhabited and it is Copy as per requirements of `Tag`. The index is
+                    // smaller than the ExactSize corresponding to `T` by transitivity over `size`.
+                    let content: *const [I] = &self.indices[..];
+                    &*(content as *const [Idx<I, T>])
+                })
+            } else {
+                None
+            }
+        }
+
+        /// Reinterpret the contents as mutable indices of a given tag.
+        ///
+        /// The given exact size must not be exactly the same as the `bound` of this allocated
+        /// slice. This guarantees that all indices within the box are valid for the Tag, and that
+        /// all stored indices will be valid for all future tags.
+        pub fn as_mut<T: Tag>(&mut self, size: ExactSize<T>) -> Option<&'_ mut [Idx<I, T>]> {
+            if size.get() == self.exact_size {
+                Some(unsafe {
+                    // SAFETY: `Idx` is a transparent wrapper around `I`, the type of this slice,
+                    // and the type `T` is a ZST. The instance `size.tag` also proves that this ZST
+                    // is inhabited and it is Copy as per requirements of `Tag`. The index is
+                    // smaller than the ExactSize corresponding to `T` by transitivity over `size`.
+                    // Also any instance written will be smaller than `self.exact_size`,
+                    // guaranteeing that the invariants of this type hold afterwards.
+                    let content: *mut [I] = &mut self.indices[..];
+                    &mut *(content as *mut [Idx<I, T>])
+                })
+            } else {
+                None
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::{with_ref, Constant, ConstantSource, Eq, LessEq, Mut};
+
     #[test]
     fn basics() {
         fn problematic(buf: &mut [u8], offsets: &[u8], idx: usize) {
-            super::with_ref(&offsets[..=idx], |offsets, len| {
-                let mut idx = len.index(idx).unwrap();
+            with_ref(&offsets[..=idx], |offsets, size| {
+                let mut idx = size.into_len().index(idx).unwrap();
                 for b in buf {
                     *b = idx.into_inner() as u8;
                     idx = idx.saturating_sub(usize::from(offsets[idx]));
@@ -838,6 +1234,108 @@ mod tests {
         let offsets = [1, 0, 2, 2];
         problematic(&mut output, &offsets[..], 3);
         assert_eq!(output, [3, 1, 1]);
+    }
+
+    #[test]
+    fn tag_switching() {
+        struct ConstantLen;
+        impl ConstantSource for ConstantLen {
+            const LEN: usize = 4;
+        }
+
+        let mut buffer = [0u8; 4];
+        let csize = Constant::<ConstantLen>::EXACT_SIZE;
+
+        let slice = Mut::new(&mut buffer[..], csize).unwrap();
+        assert_eq!(slice.len(), ConstantLen::LEN);
+        let all = csize.into_len().range_to_self();
+
+        with_ref(&buffer[..], |slice, size| {
+            let lesseq = LessEq::with_sizes(size, csize).unwrap();
+            let moreeq = LessEq::with_sizes(csize, size).unwrap();
+            // 'prove': csize = size
+            let eq = Eq::new(lesseq, moreeq).transpose();
+
+            // Use this to transport the index.
+            let all = all.with_tag(eq.into_le());
+            let safe = slice.get_safe(all);
+            assert_eq!(safe.len(), ConstantLen::LEN);
+
+            assert_eq!(csize.with_tag(eq).get(), csize.get());
+        });
+    }
+
+    #[test]
+    fn bad_inequalities() {
+        struct SmallLen;
+        struct LargeLen;
+        impl ConstantSource for SmallLen {
+            const LEN: usize = 1;
+        }
+        impl ConstantSource for LargeLen {
+            const LEN: usize = 2;
+        }
+
+        let small = Constant::<SmallLen>::EXACT_SIZE;
+        let large = Constant::<LargeLen>::EXACT_SIZE;
+
+        assert!(
+            LessEq::with_pair(small.into_capacity(), large.into_len()).is_some(),
+            "Small is in fact less than large"
+        );
+        assert!(
+            LessEq::with_pair(large.into_capacity(), small.into_len()).is_none(),
+            "Large should not appear less than small"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn idx_boxing() {
+        use super::IdxBox;
+        use alloc::boxed::Box;
+
+        struct ExactBound;
+        struct LargerBound;
+
+        impl ConstantSource for ExactBound {
+            const LEN: usize = 3;
+        }
+
+        impl ConstantSource for LargerBound {
+            const LEN: usize = 4;
+        }
+
+        let indices = Box::from([0, 1, 2]);
+
+        let mut boxed = IdxBox::new(indices).expect("Have a valid upper bound");
+        assert_eq!(boxed.bound(), <ExactBound as ConstantSource>::LEN);
+
+        let exact = Constant::<ExactBound>::EXACT_SIZE;
+        boxed.as_ref(exact.into_len()).expect("A valid upper bound");
+        let larger = Constant::<LargerBound>::EXACT_SIZE;
+        boxed
+            .as_ref(larger.into_len())
+            .expect("A valid upper bound");
+
+        boxed.as_mut(exact).expect("A valid exact bound");
+        assert!(boxed.as_mut(larger).is_none(), "An invalid exact bound");
+
+        // Now increase the bound
+        boxed.ensure(larger.get());
+        assert_eq!(boxed.bound(), <LargerBound as ConstantSource>::LEN);
+        assert!(
+            boxed.as_mut(exact).is_none(),
+            "No longer a valid exact bound"
+        );
+        boxed.as_mut(larger).expect("Now a valid exact bound");
+
+        // But we've not _actually_ changed any index, so go back.
+        boxed.truncate();
+        assert_eq!(boxed.bound(), <ExactBound as ConstantSource>::LEN);
+
+        boxed.as_mut(exact).expect("A valid exact bound");
+        assert!(boxed.as_mut(larger).is_none(), "An invalid exact bound");
     }
 }
 

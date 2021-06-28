@@ -15,6 +15,7 @@ categories = ["data-structures", "embedded", "no-std", "rust-patterns"]
 keywords = ["index", "extension", "int-index", "array-index"]
 
 [dependencies]
+generativity = "1"
 
 [dev-dependencies]
 libc = "0.2"

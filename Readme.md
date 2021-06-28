@@ -22,7 +22,7 @@ assert_eq!(buffer.get_int(u128::max_value()), None);
 ## Statically checked indices
 
 The concept of tags, a type identifying a unique slice length, allows one to
-proof through the type system that some integer is a valid index for a slice.
+prove through the type system that some integer is a valid index for a slice.
 There are two ways to use it safely, by borrowing the original slice and
 generative lifetimes or by using compile time constants, and one way to
 unsafely use arbitrary types.
@@ -32,7 +32,7 @@ use index_ext::tag;
 
 tag::with_ref(&[0, 1, 2, 3][..], |slice, len| {
   // Index construction is checked/fallible..
-  let idx = len.index(2).unwrap();
+  let idx = len.into_len().index(2).unwrap();
 
   // But use is NOT. The method get_safe does no runtime checks.
   assert_eq!(*slice.get_safe(idx), 2);
