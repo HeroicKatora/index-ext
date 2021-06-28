@@ -82,12 +82,12 @@ pub fn with_ref<'slice, T, U>(
     f: impl for<'r> FnOnce(Ref<'slice, T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
 ) -> U {
     let len = ExactSize {
-            inner: Len {
+        inner: Len {
             len: slice.len(),
             tag: Generative {
                 generated: PhantomData,
             },
-        }
+        },
     };
 
     let slice = Ref {
@@ -107,12 +107,12 @@ pub fn with_mut<'slice, T, U>(
     f: impl for<'r> FnOnce(Mut<'slice, T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
 ) -> U {
     let len = ExactSize {
-            inner: Len {
+        inner: Len {
             len: slice.len(),
             tag: Generative {
                 generated: PhantomData,
             },
-        }
+        },
     };
 
     let slice = Mut {
@@ -533,8 +533,10 @@ impl<'lt> ExactSize<Generative<'lt>> {
         ExactSize {
             inner: Len {
                 len,
-                tag: Generative { generated: PhantomData },
-            }
+                tag: Generative {
+                    generated: PhantomData,
+                },
+            },
         }
     }
 }
@@ -598,7 +600,10 @@ impl<T: Tag> ExactSize<T> {
     /// slice is long enough to be allowed. This is not safely reversible.
     #[must_use = "Returns a new index"]
     pub fn into_capacity(self) -> Capacity<T> {
-        Capacity { len: self.inner.len, tag: self.inner.tag }
+        Capacity {
+            len: self.inner.len,
+            tag: self.inner.tag,
+        }
     }
 
     /// Construct a new bound from an pair of Len and Capacity with the same value.
@@ -678,10 +683,7 @@ impl<A: Tag, B: Tag> LessEq<A, B> {
     /// This returns `Some` when the lower bound for B is not smaller than the upper bound for A.
     pub fn with_pair(a: Capacity<A>, b: Len<B>) -> Option<Self> {
         if b.get() >= a.get() {
-            Some(LessEq {
-                a: a.tag,
-                b: b.tag,
-            })
+            Some(LessEq { a: a.tag, b: b.tag })
         } else {
             None
         }
@@ -1161,8 +1163,10 @@ mod impl_of_boxed_idx {
                 // All mutation was performed under some concrete upper bound, and current elements
                 // must still be bounded by the largest such bound.
                 .expect("Some upper bound must still apply");
-            debug_assert!(self.exact_size >= least_bound,
-                "The exact size was corrupted to be below the least bound.");
+            debug_assert!(
+                self.exact_size >= least_bound,
+                "The exact size was corrupted to be below the least bound."
+            );
             self.exact_size = least_bound;
         }
 
@@ -1179,7 +1183,7 @@ mod impl_of_boxed_idx {
                     // is inhabited and it is Copy as per requirements of `Tag`. The index is
                     // smaller than the ExactSize corresponding to `T` by transitivity over `size`.
                     let content: *const [I] = &self.indices[..];
-                    &*(content as *const [Idx::<I, T>])
+                    &*(content as *const [Idx<I, T>])
                 })
             } else {
                 None
@@ -1201,7 +1205,7 @@ mod impl_of_boxed_idx {
                     // Also any instance written will be smaller than `self.exact_size`,
                     // guaranteeing that the invariants of this type hold afterwards.
                     let content: *mut [I] = &mut self.indices[..];
-                    &mut *(content as *mut [Idx::<I, T>])
+                    &mut *(content as *mut [Idx<I, T>])
                 })
             } else {
                 None
@@ -1275,10 +1279,14 @@ mod tests {
         let small = Constant::<SmallLen>::EXACT_SIZE;
         let large = Constant::<LargeLen>::EXACT_SIZE;
 
-        assert!(LessEq::with_pair(small.into_capacity(), large.into_len()).is_some(),
-            "Small is in fact less than large");
-        assert!(LessEq::with_pair(large.into_capacity(), small.into_len()).is_none(),
-            "Large should not appear less than small");
+        assert!(
+            LessEq::with_pair(small.into_capacity(), large.into_len()).is_some(),
+            "Small is in fact less than large"
+        );
+        assert!(
+            LessEq::with_pair(large.into_capacity(), small.into_len()).is_none(),
+            "Large should not appear less than small"
+        );
     }
 
     #[test]
@@ -1300,14 +1308,15 @@ mod tests {
 
         let indices = Box::from([0, 1, 2]);
 
-        let mut boxed = IdxBox::new(indices)
-            .expect("Have a valid upper bound");
+        let mut boxed = IdxBox::new(indices).expect("Have a valid upper bound");
         assert_eq!(boxed.bound(), <ExactBound as ConstantSource>::LEN);
 
         let exact = Constant::<ExactBound>::EXACT_SIZE;
         boxed.as_ref(exact.into_len()).expect("A valid upper bound");
         let larger = Constant::<LargerBound>::EXACT_SIZE;
-        boxed.as_ref(larger.into_len()).expect("A valid upper bound");
+        boxed
+            .as_ref(larger.into_len())
+            .expect("A valid upper bound");
 
         boxed.as_mut(exact).expect("A valid exact bound");
         assert!(boxed.as_mut(larger).is_none(), "An invalid exact bound");
@@ -1315,7 +1324,10 @@ mod tests {
         // Now increase the bound
         boxed.ensure(larger.get());
         assert_eq!(boxed.bound(), <LargerBound as ConstantSource>::LEN);
-        assert!(boxed.as_mut(exact).is_none(), "No longer a valid exact bound");
+        assert!(
+            boxed.as_mut(exact).is_none(),
+            "No longer a valid exact bound"
+        );
         boxed.as_mut(larger).expect("Now a valid exact bound");
 
         // But we've not _actually_ changed any index, so go back.
