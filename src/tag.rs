@@ -1278,15 +1278,17 @@ impl<const N: usize> Const<N> {
         unsafe { ExactSize::new_untagged(N, Const) };
 
     /// Create a [`Ref`] wrapping the array.
-    pub fn to_ref<'slice, T>(self, arr: &'slice [T; N])
-        -> Ref<'slice, T, Self>
+    pub fn to_ref<T>(self, arr: &[T; N])
+        -> Ref<'_, T, Self>
     {
         unsafe { Ref::new_unchecked(&arr[..], self) }
     }
 
     /// Create a [`Mut`] wrapping the array mutably.
-    pub fn to_mut<'slice, T>(self, arr: &'slice [T; N])
-        -> Ref<'slice, T, Self>
+    // Internal consistency in naming deemed more important.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_mut<T>(self, arr: &[T; N])
+        -> Ref<'_, T, Self>
     {
         unsafe { Ref::new_unchecked(&arr[..], self) }
     }
