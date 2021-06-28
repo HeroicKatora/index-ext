@@ -1,28 +1,64 @@
 //! Not quite dependent typing for eliding bounds checks.
 //!
-//! ## Lifetime generativity
+//! ## Rough mechanism
 //!
-//! The main idea is to use lifetimes as a compile time tag to identify a particular exact slice
-//! without keeping a direct reference of it. This means that you can not choose any of the
-//! lifetime parameters that you see in this module. Instead, you must be prepared to handle
-//! arbitrary lifetime which will make it opaque to you and the compiler. Each lifetime guarantees
-//! that all `Ref` and `Mut` with that exact lifetime are at least as long as all the sizes in
-//! `Len` structs of the same lifetime and each `Idx` is bounded by some `Len`. While this may seem
-//! very restrictive at first, it still allows you to pass information on a slice's length across
-//! function boundaries by explicitly mentioning the same lifetime twice. Additionally you're
-//! allowed some mutable operations on indices that can not exceed the original bounds.
+//! The main idea is to use types as a compile time tag to identify a particular exact length bound
+//! without storing this bound in all instances associated with it. Thusly, we can construct
+//! indices that are guaranteed in-bounds of slices tagged with the same type, while storing them
+//! independent of each other and without introducing any borrow coupling. This then _guarantees_ a
+//! bounds-check free code path for indexing into the slices.
 //!
-//! Use [`with_ref`] and [`with_mut`] as the main entry constructors.
+//! This works particularly well for programs with fixed size buffers, i.e. kernels, bootloaders,
+//! embedded, high-assurance programs. If you encapsulate the `ExactSize` instance containing the
+//! authoritative source of the associated length then you can have a very high confidence in have
+//! ran appropriate access and bounds checks before accesses.
+//!
+//! ## Built-in Tag types
+//!
+//! There are a couple of different methods for creating tag types with such associations:
+//!
+//! 1. As a compile time constant. The [`Constant`] and [`Const`] offer different ways of defining
+//!    the associated length as a fixed number. The former let's you give it a type as a name while
+//!    the latter is based on generic parameters.
+//!
+//! 2. The generative way. The [`Generative`]` type is unique for every created instance by having
+//!    a unique lifetime parameter.  That is, you can not choose its lifetime parameters freely.
+//!    Instead, to create an instance you write a function be prepared to handle arbitrary lifetime
+//!    and the library hands an instance to you. This makes the exact lifetime opaque to you and
+//!    the compiler which forces all non-local code to assume that it is indeed unique and it can
+//!    not be unified with any other. We associate such a [`Generative`] instance with the length
+//!    of the one slice provided during its construction.
+//!
+//! 3. And finally one might come up with an internal naming scheme where types are used to express
+//!    unique bounds. This requires some unsafe code and the programmers guarantee of uniqueness of
+//!    values but permits the combination of runtime values with `'static` lifetime of the tag.
+//!
+//! Each tag guarantees that all [`Ref`] and [`Mut`] with that exact same tag are at least as long
+//! as all the sizes in [`Len`] structs of the same lifetime and each [`Idx`] is bounded by some
+//! [`Len`].  While this may seem very restrictive at first, it still allows you to pass
+//! information on a slice's length across function boundaries by explicitly mentioning the same
+//! lifetime twice.  Additionally you're allowed some mutable operations on indices that can not
+//! exceed the original bounds.
+//!
+//! Use [`with_ref`] and [`with_mut`] as main entry functions or one the constructors on the type
+//! [`Generative`]. Note the interaction with the `generativity` crate which provides a macro that
+//! doesn't influence code flow, instead of requiring a closure wrapper like the methods given in
+//! this crate.
 //!
 //! [`with_ref`]: fn.with_ref.html
 //! [`with_mut`]: fn.with_mut.html
 //!
+//! Additionally, the module provides an 'algebra' for tags such that you can dynamically prove two
+//! tags to be equivalent, comparable, etc. Then you can leverage these facts (which are also
+//! encoded as types) to substitute tags in different manner. See the [`LessEq`] and [`Eq`] types
+//! as well as the many combinators on [`ExactSize`], [`Len`], and [`Idx`].
+//!
 //! ## Checked constant bounds
 //!
-//! Alternatively we can choose other unique type instances. By that we mean that for any particular
-//! type exactly _one_ value must be used to construct `ExactSize`. One possible way is if this is
-//! simply a constant which is implemented by the `Constant` wrapper and its `ConstantSource`
-//! trait. For example one may define:
+//! Alternatively we can choose other unique type instances. By that we mean that for any
+//! particular type exactly _one_ value must be used to construct [`ExactSize`]. One possible way
+//! is if this is simply a constant which is implemented by the `Constant` wrapper and its
+//! [`ConstantSource`] trait. For example one may define:
 //!
 //! ```
 //! use index_ext::tag::{Constant, ConstantSource, ExactSize};
@@ -36,21 +72,21 @@
 //!
 //! const LEN: ExactSize<Constant<BufferSize4K>> = Constant::EXACT_SIZE;
 //! ```
-//!
-//! ## Named bounds
-//!
-//! And finally one might come up with an internal naming scheme where types are used to express
-//! unique bounds. This requires some unsafe code and the programmers guarantee of uniqueness of
-//! values but permits the combination of runtime values with `'static` lifetime.
 use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 use core::ops::{Range, RangeFrom, RangeTo};
 
 /// A type suitable for tagging length, indices, and containers.
 ///
-/// It must _not_ be safe to create two instances of the same type and should be impossible except
-/// through the `copy` method. Note that this restriction MUST hold for every possible coercion
-/// allowed by the language.
+/// # Safety
+///
+/// The manner in which new [`ExactSize`] instances of types implementing this trait can be created
+/// is an invariant of each individual type. It must **not** be allowed to subvert the invariants
+/// imposed by any other type implementing this trait. In particular you mustn't create an instance
+/// that allows coercing a `ExactSize<ATag>` into `ExactSize<BTag>` where you don't control both
+/// these types. Note that this restriction MUST hold for every possible coercion allowed by the
+/// language. There are no inherently safe constructors for `ExactSize` but each tag type might
+/// define some.
 pub unsafe trait Tag: Copy {}
 
 /// A generative lifetime.
@@ -232,6 +268,34 @@ pub trait ConstantSource {
 pub struct Constant<T>(PhantomData<fn(&mut T) -> T>);
 
 unsafe impl<T: ConstantSource> Tag for Constant<T> {}
+
+/// A tag using a const generic length parameter.
+///
+/// The only safe way to construct an `ExactSize` is by copying the associated constant which
+/// expresses the length indicated in the trait impl. This implies that the value is unique.
+///
+/// # Usage
+///
+/// ```
+/// use index_ext::tag::{Const, Ref};
+///
+/// let size = Const::<8>::EXACT_SIZE;
+///
+/// let data = [0, 1, 2, 3, 4, 5, 6, 7];
+/// let slice = Ref::new(&data[..], size).unwrap();
+///
+/// let prefix = size
+///     .into_len()
+///     .truncate(4)
+///     .range_to_self();
+///
+/// let prefix = &slice[prefix];
+/// assert_eq!(prefix, [0, 1, 2, 3]);
+/// ```
+#[derive(Clone, Copy)]
+pub struct Const<const N: usize>;
+
+unsafe impl<const N: usize> Tag for Const<N> {}
 
 /// A valid index for all slices of the same length.
 ///
@@ -523,12 +587,46 @@ impl<T> ExactSize<T> {
     }
 }
 
+impl<'lt> Generative<'lt> {
+    /// Construct a size with a generative guard and explicit length.
+    ///
+    /// The `Guard` instance is a token that verifies that no other instance with that particular
+    /// lifetime exists. It is thus not possible to safely construct a second `ExactSize` with the
+    /// same tag but a different length. This uniquely ties the value `len` to that lifetime.
+    pub fn with_len(len: usize, token: generativity::Guard<'lt>) -> ExactSize<Self> {
+        ExactSize::with_guard(len, token)
+    }
+
+    pub fn with_ref<'slice, T>(slice: &'slice [T], token: generativity::Guard<'lt>)
+        -> (Ref<'slice, T, Self>, ExactSize<Self>)
+    {
+        let size = ExactSize::with_guard(slice.len(), token);
+        // Safety: This tag is associated with the exact length of the slice in the line above
+        // which is less or equal to the length of the slice.
+        let ref_ = unsafe { Ref::new_unchecked(slice, size.inner.tag) };
+        (ref_, size)
+    }
+
+    pub fn with_mut<'slice, T>(slice: &'slice mut [T], token: generativity::Guard<'lt>)
+        -> (Mut<'slice, T, Self>, ExactSize<Self>)
+    {
+        let size = ExactSize::with_guard(slice.len(), token);
+        // Safety: This tag is associated with the exact length of the slice in the line above
+        // which is less or equal to the length of the slice.
+        let ref_ = unsafe { Mut::new_unchecked(slice, size.inner.tag) };
+        (ref_, size)
+    }
+}
+
 impl<'lt> ExactSize<Generative<'lt>> {
     /// Construct a size with a generative guard.
     ///
     /// The `Guard` instance is a token that verifies that no other instance with that particular
     /// lifetime exists. It is thus not possible to safely construct a second `ExactSize` with the
     /// same tag but a different length. This uniquely ties the value `len` to that lifetime.
+    ///
+    /// FIXME: make this `const fn` which requires `PhantomData<fn()>` to be allowed in const
+    /// context (a small subset of #57563).
     pub fn with_guard(len: usize, _: generativity::Guard<'lt>) -> Self {
         ExactSize {
             inner: Len {
@@ -869,6 +967,16 @@ impl<'slice, T: Tag, E> Ref<'slice, E, T> {
         }
     }
 
+    /// Unsafely wrap a slice into an index wrapper.
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold that the _exact size_ associated with the type `Tag` (see
+    /// [`ExactSize::new_untagged`]) is at most as large as the length of this slice.
+    pub unsafe fn new_unchecked(slice: &'slice [E], tag: T) -> Self {
+        Ref { slice, tag }
+    }
+
     /// Get the length as a `Capacity` of all slices with this tag.
     pub fn capacity(&self) -> Capacity<T> {
         Capacity {
@@ -915,6 +1023,16 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
         } else {
             None
         }
+    }
+
+    /// Unsafely wrap a slice into an index wrapper.
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold that the _exact size_ associated with the type `Tag` (see
+    /// [`ExactSize::new_untagged`]) is at most as large as the length of this slice.
+    pub unsafe fn new_unchecked(slice: &'slice mut [E], tag: T) -> Self {
+        Mut { slice, tag }
     }
 
     /// Get the length as a `Capacity` of all slices with this tag.
@@ -1095,6 +1213,18 @@ impl<T: ConstantSource> Constant<T> {
     pub const EXACT_SIZE: ExactSize<Self> =
         // SAFETY: all instances have the same length, `LEN`.
         unsafe { ExactSize::new_untagged(T::LEN, Constant(PhantomData)) };
+}
+
+impl<const N: usize> Const<N> {
+    pub const EXACT_SIZE: ExactSize<Self> =
+        // SAFETY: all instances have the same length, `N`.
+        unsafe { ExactSize::new_untagged(N, Const) };
+
+    pub fn to_ref<'slice, T>(self, arr: &'slice [T; N])
+        -> Ref<'slice, T, Self>
+    {
+        unsafe { Ref::new_unchecked(&arr[..], self) }
+    }
 }
 
 #[cfg(feature = "alloc")]
