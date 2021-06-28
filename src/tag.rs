@@ -87,6 +87,9 @@ use core::ops::{Range, RangeFrom, RangeTo};
 /// these types. Note that this restriction MUST hold for every possible coercion allowed by the
 /// language. There are no inherently safe constructors for `ExactSize` but each tag type might
 /// define some.
+///
+/// The type must further promise to be zero-sized and have an alignment of exactly `1`. This
+/// allows tags to be virtually added to other referenced objects in-place.
 pub unsafe trait Tag: Copy {}
 
 /// A generative lifetime.
@@ -597,6 +600,28 @@ impl<'lt> Generative<'lt> {
         ExactSize::with_guard(len, token)
     }
 
+    /// Consume a generativity token to associated a lifetime with the slice's length.
+    ///
+    /// This isn't fundamentally different from using [`with_len`] and [`Mut::new`], and you might
+    /// want to see those documentations, but it clarifies that this combination is infallible.
+    ///
+    /// # Usage
+    ///
+    /// This allows you to do the same as [`with_ref`] but ad-hoc within a function body without
+    /// introducing any new scope.
+    ///
+    /// ```
+    /// use generativity::make_guard;
+    /// use index_ext::tag::Generative;
+    ///
+    /// let data = (0..117).collect::<Vec<_>>();
+    /// make_guard!(guard);
+    /// let (slice, size) = Generative::with_ref(&data, guard);
+    /// let index = size.into_len().range_to_self();
+    ///
+    /// // … Later, no bounds check here.
+    /// let data = &slice[index];
+    /// ```
     pub fn with_ref<'slice, T>(slice: &'slice [T], token: generativity::Guard<'lt>)
         -> (Ref<'slice, T, Self>, ExactSize<Self>)
     {
@@ -607,6 +632,27 @@ impl<'lt> Generative<'lt> {
         (ref_, size)
     }
 
+    /// Consume a generativity token to associated a lifetime with the mutable slice's length.
+    ///
+    /// This isn't fundamentally different from using [`with_len`] and [`Ref::new`], and you might
+    /// want to see those documentations, but it clarifies that this combination is infallible.
+    ///
+    /// # Usage
+    ///
+    /// This allows you to do the same as [`with_mut`] but ad-hoc within a function body without
+    /// introducing any new scope.
+    ///
+    /// ```
+    /// use generativity::make_guard;
+    /// use index_ext::tag::Generative;
+    ///
+    /// let mut data = (0..117).collect::<Vec<_>>();
+    /// make_guard!(guard);
+    /// let (mut slice, size) = Generative::with_mut(&mut data, guard);
+    /// let index = size.into_len().range_to_self();
+    ///
+    /// // … Later, no bounds check here.
+    /// let data = &mut slice[index];
     pub fn with_mut<'slice, T>(slice: &'slice mut [T], token: generativity::Guard<'lt>)
         -> (Mut<'slice, T, Self>, ExactSize<Self>)
     {
@@ -1210,17 +1256,36 @@ impl<T> Clone for Constant<T> {
 impl<T> Copy for Constant<T> {}
 
 impl<T: ConstantSource> Constant<T> {
+    /// A constructed instance of `ExactSize<Self>`.
+    ///
+    /// The instance can be freely copied. Making this an associated constant ensures that the
+    /// length associated with the type is the associated `LEN` constant while also permitting use
+    /// in `const` environments, despite the `ConstantSource` bound on the parameter. There are no
+    /// other safe constructors for this tag's `ExactSize` type.
     pub const EXACT_SIZE: ExactSize<Self> =
         // SAFETY: all instances have the same length, `LEN`.
         unsafe { ExactSize::new_untagged(T::LEN, Constant(PhantomData)) };
 }
 
 impl<const N: usize> Const<N> {
+    /// A constructed instance of `ExactSize<Self>`.
+    ///
+    /// The instance can be freely copied. Making this an associated constant ensures that the
+    /// length associated with the type is the constant parameter `N`. There are no other safe
+    /// constructors for this tag's `ExactSize` type.
     pub const EXACT_SIZE: ExactSize<Self> =
         // SAFETY: all instances have the same length, `N`.
         unsafe { ExactSize::new_untagged(N, Const) };
 
+    /// Create a [`Ref`] wrapping the array.
     pub fn to_ref<'slice, T>(self, arr: &'slice [T; N])
+        -> Ref<'slice, T, Self>
+    {
+        unsafe { Ref::new_unchecked(&arr[..], self) }
+    }
+
+    /// Create a [`Mut`] wrapping the array mutably.
+    pub fn to_mut<'slice, T>(self, arr: &'slice [T; N])
         -> Ref<'slice, T, Self>
     {
         unsafe { Ref::new_unchecked(&arr[..], self) }

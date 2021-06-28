@@ -27,6 +27,8 @@
 //!
 #![cfg_attr(feature = "nightly", doc = "```")]
 #![cfg_attr(not(feature = "nightly"), doc = "```ignore")]
+#![deny(clippy::missing_safety_doc)]
+#![deny(missing_docs)]
 //! # let slice = [0; 4];
 //! use index_ext::array::RangeTo;
 //! // Grab an array of three element from a slice.
