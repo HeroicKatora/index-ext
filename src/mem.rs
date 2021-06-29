@@ -8,7 +8,29 @@
 //! # Usage
 //!
 //! These are best used in places where the ABI or layout of the type is important but there is a
-//! security risk associated with having to write (fallible) conversions all the time.
+//! security risk associated with having to write (fallible) conversions all the time. Consider the
+//! case of a matrix where dimensions are stored as `u32` for compatibility reasons. We would now
+//! like to allocate a buffer for it which requires calculating the number of elements as a `u64`
+//! and then convert to `usize`. However, no matter in which number type you intend to store the
+//! result you lose semantic meaning because there is no 'proof' attached to the value that it will
+//! also fit into the other value range.
+//!
+//! ```
+//! use index_ext::mem::Umem64;
+//!
+//! struct Matrix {
+//!     width: u32,
+//!     height: u32,
+//! }
+//!
+//! # fn fake() -> Option<()> {
+//! # let mat = Matrix { width: 0, height: 0 };
+//! let elements = u64::from(mat.width) * u64::from(mat.height);
+//! let length: Umem64 = Umem64::new(elements)?;
+//!
+//! let matrix = vec![0; length.get()];
+//! # Some(()) }
+//! ```
 
 macro_rules! lossless_integer {
     (
@@ -38,6 +60,11 @@ macro_rules! lossless_integer {
             /// ` value of the integer.
             pub fn get(self) -> $sizet {
                 self.0 as $sizet
+            }
+
+            /// Get the inner value in the original type.
+            pub fn into_inner(self) -> $under {
+                self.0
             }
         }
     };
