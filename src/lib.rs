@@ -27,6 +27,8 @@
 //!
 #![cfg_attr(feature = "nightly", doc = "```")]
 #![cfg_attr(not(feature = "nightly"), doc = "```ignore")]
+#![deny(clippy::missing_safety_doc)]
+#![deny(missing_docs)]
 //! # let slice = [0; 4];
 //! use index_ext::array::RangeTo;
 //! // Grab an array of three element from a slice.
@@ -73,7 +75,6 @@ mod sealed {
     pub trait Sealed {}
 }
 
-#[cfg(feature = "nightly")]
 pub mod array;
 pub mod int;
 pub mod tag;
@@ -291,14 +292,12 @@ pub fn Int<T>(idx: T) -> int::Int<T> {
     int::Int(idx)
 }
 
-#[cfg(feature = "nightly")]
 macro_rules! doctest_readme {
     { $content:expr } => {
         #[doc = $content] extern {}
     }
 }
 
-#[cfg(feature = "nightly")]
 doctest_readme!(include_str!("../Readme.md"));
 
 #[cfg(test)]

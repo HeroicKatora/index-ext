@@ -1,3 +1,4 @@
+//! Defines wrappers around standard integers to use the as indices.
 use core::convert::TryInto;
 use core::hint::unreachable_unchecked;
 use core::num::TryFromIntError;
@@ -121,7 +122,8 @@ pub(crate) mod sealed {
 /// An indexing adaptor for `TryInto`.
 ///
 /// This transparent wrapper allows any type to function as an index as long as it is fallibly
-/// convertible to a `usize`. Contrary to the simple integer types, the implementation of
+/// convertible to a `usize`. An indexing operation is successful if the conversion succeeds and
+/// the resulting index is in bounds. Contrary to the simple integer types, the implementation of
 /// `get_unchecked` methods will _not_ unsafely assume that the conversion itself can't fail, only
 /// that the resulting index is in-bounds.
 ///
