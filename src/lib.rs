@@ -25,10 +25,7 @@
 //! slices. Due to recent advances in parameter deduction, the length parameter need not even be
 //! named.
 //!
-#![cfg_attr(feature = "nightly", doc = "```")]
-#![cfg_attr(not(feature = "nightly"), doc = "```ignore")]
-#![deny(clippy::missing_safety_doc)]
-#![deny(missing_docs)]
+//! ```
 //! # let slice = [0; 4];
 //! use index_ext::array::RangeTo;
 //! // Grab an array of three element from a slice.
@@ -64,6 +61,8 @@
 //! for the otherwise unconstrained type parameter of the generic impl. If the types were added to
 //! `core` then this indirection would not be necessary and ergonomics would improve.
 #![no_std]
+#![deny(clippy::missing_safety_doc)]
+#![deny(missing_docs)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
