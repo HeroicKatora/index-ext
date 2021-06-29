@@ -76,6 +76,7 @@ mod sealed {
 
 pub mod array;
 pub mod int;
+pub mod mem;
 pub mod tag;
 
 /// A trait for integer based indices.
