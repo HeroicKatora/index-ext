@@ -622,9 +622,10 @@ impl<'lt> Generative<'lt> {
     /// // … Later, no bounds check here.
     /// let data = &slice[index];
     /// ```
-    pub fn with_ref<'slice, T>(slice: &'slice [T], token: generativity::Guard<'lt>)
-        -> (Ref<'slice, T, Self>, ExactSize<Self>)
-    {
+    pub fn with_ref<'slice, T>(
+        slice: &'slice [T],
+        token: generativity::Guard<'lt>,
+    ) -> (Ref<'slice, T, Self>, ExactSize<Self>) {
         let size = ExactSize::with_guard(slice.len(), token);
         // Safety: This tag is associated with the exact length of the slice in the line above
         // which is less or equal to the length of the slice.
@@ -653,9 +654,10 @@ impl<'lt> Generative<'lt> {
     ///
     /// // … Later, no bounds check here.
     /// let data = &mut slice[index];
-    pub fn with_mut<'slice, T>(slice: &'slice mut [T], token: generativity::Guard<'lt>)
-        -> (Mut<'slice, T, Self>, ExactSize<Self>)
-    {
+    pub fn with_mut<'slice, T>(
+        slice: &'slice mut [T],
+        token: generativity::Guard<'lt>,
+    ) -> (Mut<'slice, T, Self>, ExactSize<Self>) {
         let size = ExactSize::with_guard(slice.len(), token);
         // Safety: This tag is associated with the exact length of the slice in the line above
         // which is less or equal to the length of the slice.
@@ -1278,18 +1280,14 @@ impl<const N: usize> Const<N> {
         unsafe { ExactSize::new_untagged(N, Const) };
 
     /// Create a [`Ref`] wrapping the array.
-    pub fn to_ref<T>(self, arr: &[T; N])
-        -> Ref<'_, T, Self>
-    {
+    pub fn to_ref<T>(self, arr: &[T; N]) -> Ref<'_, T, Self> {
         unsafe { Ref::new_unchecked(&arr[..], self) }
     }
 
     /// Create a [`Mut`] wrapping the array mutably.
     // Internal consistency in naming deemed more important.
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_mut<T>(self, arr: &[T; N])
-        -> Ref<'_, T, Self>
-    {
+    pub fn to_mut<T>(self, arr: &[T; N]) -> Ref<'_, T, Self> {
         unsafe { Ref::new_unchecked(&arr[..], self) }
     }
 }
