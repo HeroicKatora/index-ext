@@ -31,7 +31,6 @@
 //! let matrix = vec![0; length.get()];
 //! # Some(()) }
 //! ```
-
 macro_rules! lossless_integer {
     (
         $(#[$attr:meta])*
@@ -73,7 +72,7 @@ macro_rules! lossless_integer {
 macro_rules! integer_mem {
     ($(#[$attr:meta])* pub struct $name:ident ($under:ty)) => {
         lossless_integer!($(#[$attr])*
-        usize "usize" 
+        usize "usize"
         pub struct $name ($under));
 
         impl<T> core::ops::Index<$name> for [T] {
@@ -137,7 +136,6 @@ integer_mem!(
     /// An isize that is also in the value range of a usize.
     pub struct Imem(isize)
 );
-
 
 integer_diff!(
     /// An i8 that is also in the value range of an isize.
