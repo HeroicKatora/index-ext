@@ -1,7 +1,7 @@
-use index_ext::tag::{Constant, ConstantSource, Mut};
+use index_ext::tag::{Constant, ConstantSource, Slice};
 
 // This method accepts only slices at least 10 elements long.
-pub fn foo1(mut a: Mut<u8, Constant<Min10>>) {
+pub fn foo1(a: &mut Slice<u8, Constant<Min10>>) {
     let idx = Constant::<Min10>::EXACT_SIZE.into_len().range_to_self();
     // And can iterate over them without panicking.
     for i in a.get_safe_mut(idx) {
@@ -17,6 +17,6 @@ impl ConstantSource for Min10 {
 
 fn main() {
     let mut buffer = [0u8; 12];
-    let buffer = Mut::new(&mut buffer[..], Constant::<Min10>::EXACT_SIZE).unwrap();
+    let buffer = Slice::new_mut(&mut buffer[..], Constant::<Min10>::EXACT_SIZE).unwrap();
     foo1(buffer);
 }
