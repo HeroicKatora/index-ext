@@ -678,7 +678,8 @@ impl<T: Tag> ExactSize<T> {
     ///
     /// All `ExactSize` instances with the same tag type must also have the same `len` field.
     pub unsafe fn new(len: usize, tag: T) -> Self {
-        Self::new_untagged(len, tag)
+        // Safety: Propagates the exact same safety requirements.
+        unsafe { Self::new_untagged(len, tag) }
     }
 
     /// Construct a new bound from a length.
@@ -688,7 +689,8 @@ impl<T: Tag> ExactSize<T> {
     /// You _must_ ensure that no slice with this same tag can be shorter than `len`. In particular
     /// there mustn't be any other `ExactSize` with a differing length.
     pub unsafe fn from_len(len: Len<T>) -> Self {
-        Self::from_len_untagged(len)
+        // Safety: Propagates a subset of safety requirements.
+        unsafe { Self::from_len_untagged(len) }
     }
 
     /// Construct a new bound from a capacity.
@@ -698,7 +700,8 @@ impl<T: Tag> ExactSize<T> {
     /// You _must_ ensure that no index with this same tag can be above `cap`. In particular there
     /// mustn't be any other `ExactSize` with a differing length but the same tag type.
     pub unsafe fn from_capacity(cap: Capacity<T>) -> Self {
-        Self::new_untagged(cap.len, cap.tag)
+        // Safety: Propagates a subset of safety requirements.
+        unsafe { Self::new_untagged(cap.len, cap.tag) }
     }
 
     /// Interpret this with the tag of an equal sized slice.

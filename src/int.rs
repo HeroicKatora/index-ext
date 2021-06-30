@@ -181,11 +181,13 @@ where
     }
     unsafe fn get_unchecked(self, slice: &[U]) -> &Self::Output {
         // Explicitly do __NOT__ make the conversion itself unchecked.
-        slice.get_unchecked(self.into_int_index())
+        let idx = self.into_int_index();
+        unsafe { slice.get_unchecked(idx) }
     }
     unsafe fn get_unchecked_mut(self, slice: &mut [U]) -> &mut Self::Output {
         // Explicitly do __NOT__ make the conversion itself unchecked.
-        slice.get_unchecked_mut(self.into_int_index())
+        let idx = self.into_int_index();
+        unsafe { slice.get_unchecked_mut(idx) }
     }
     fn index(self, slice: &[U]) -> &Self::Output {
         &slice[self.into_int_index()]
@@ -322,14 +324,20 @@ macro_rules! slice_index {
         }
         unsafe fn get_unchecked(self, slice: &[U]) -> &Self::Output {
             match IntoIntIndex::index(self) {
-                Ok(idx) => slice.get_unchecked(idx),
-                Err(_) => unreachable_unchecked(),
+                // Safety: the caller promises that the index is valid.
+                Ok(idx) => unsafe { slice.get_unchecked(idx) },
+                // Safety: the caller promises that the index is valid.
+                // This implies that it is in-bounds of the `usize` type.
+                Err(_) => unsafe { unreachable_unchecked() },
             }
         }
         unsafe fn get_unchecked_mut(self, slice: &mut [U]) -> &mut Self::Output {
             match IntoIntIndex::index(self) {
-                Ok(idx) => slice.get_unchecked_mut(idx),
-                Err(_) => unreachable_unchecked(),
+                // Safety: the caller promises that the index is valid.
+                Ok(idx) => unsafe { slice.get_unchecked_mut(idx) },
+                // Safety: the caller promises that the index is valid.
+                // This implies that it is in-bounds of the `usize` type.
+                Err(_) => unsafe { unreachable_unchecked() },
             }
         }
         fn index(self, slice: &[U]) -> &Self::Output {
@@ -364,14 +372,20 @@ macro_rules! slice_index {
         }
         unsafe fn get_unchecked(self, slice: &str) -> &Self::Output {
             match IntoIntIndex::index(self) {
-                Ok(idx) => slice.get_unchecked(idx),
-                Err(_) => unreachable_unchecked(),
+                // Safety: the caller promises that the index is valid.
+                Ok(idx) => unsafe { slice.get_unchecked(idx) },
+                // Safety: the caller promises that the index is valid.
+                // This implies that it is in-bounds of the `usize` type.
+                Err(_) => unsafe { unreachable_unchecked() },
             }
         }
         unsafe fn get_unchecked_mut(self, slice: &mut str) -> &mut Self::Output {
             match IntoIntIndex::index(self) {
-                Ok(idx) => slice.get_unchecked_mut(idx),
-                Err(_) => unreachable_unchecked(),
+                // Safety: the caller promises that the index is valid.
+                Ok(idx) => unsafe { slice.get_unchecked_mut(idx) },
+                // Safety: the caller promises that the index is valid.
+                // This implies that it is in-bounds of the `usize` type.
+                Err(_) => unsafe { unreachable_unchecked() },
             }
         }
         fn index(self, slice: &str) -> &Self::Output {

@@ -63,6 +63,7 @@
 #![no_std]
 #![deny(clippy::missing_safety_doc)]
 #![deny(missing_docs)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -228,7 +229,8 @@ impl<U> Int for [U] {
     where
         T: IntSliceIndex<Self>,
     {
-        <T as int::sealed::IntSliceIndex<Self>>::get_unchecked(idx, self)
+        // Safety: Propagates the requirements from the caller that this is a valid index.
+        unsafe { <T as int::sealed::IntSliceIndex<Self>>::get_unchecked(idx, self) }
     }
 
     unsafe fn get_int_unchecked_mut<T>(
@@ -238,7 +240,8 @@ impl<U> Int for [U] {
     where
         T: IntSliceIndex<Self>,
     {
-        <T as int::sealed::IntSliceIndex<Self>>::get_unchecked_mut(idx, self)
+        // Safety: Propagates the requirements from the caller that this is a valid index.
+        unsafe { <T as int::sealed::IntSliceIndex<Self>>::get_unchecked_mut(idx, self) }
     }
 }
 
@@ -269,7 +272,8 @@ impl Int for str {
     where
         T: IntSliceIndex<Self>,
     {
-        <T as int::sealed::IntSliceIndex<Self>>::get_unchecked(idx, self)
+        // Safety: Propagates the requirements from the caller that this is a valid index.
+        unsafe { <T as int::sealed::IntSliceIndex<Self>>::get_unchecked(idx, self) }
     }
 
     unsafe fn get_int_unchecked_mut<T>(
@@ -279,7 +283,8 @@ impl Int for str {
     where
         T: IntSliceIndex<Self>,
     {
-        <T as int::sealed::IntSliceIndex<Self>>::get_unchecked_mut(idx, self)
+        // Safety: Propagates the requirements from the caller that this is a valid index.
+        unsafe { <T as int::sealed::IntSliceIndex<Self>>::get_unchecked_mut(idx, self) }
     }
 }
 
