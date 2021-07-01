@@ -33,7 +33,7 @@
 //!    unique bounds. This requires some unsafe code and the programmers guarantee of uniqueness of
 //!    values but permits the combination of runtime values with `'static` lifetime of the tag.
 //!
-//! Each tag guarantees that all [`Ref`] and [`Mut`] with that exact same tag are at least as long
+//! Each tag guarantees that all [`Slice`] with that exact same tag are at least as long
 //! as all the sizes in [`Len`] structs of the same lifetime and each [`Idx`] is bounded by some
 //! [`Len`].  While this may seem very restrictive at first, it still allows you to pass
 //! information on a slice's length across function boundaries by explicitly mentioning the same
@@ -118,7 +118,7 @@ pub struct Named<T> {
 /// length tag. It has no control over the exact lifetime used for the tag.
 pub fn with_ref<'slice, T, U>(
     slice: &'slice [T],
-    f: impl for<'r> FnOnce(Ref<'slice, T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
+    f: impl for<'r> FnOnce(&'slice Slice<T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
 ) -> U {
     let len = ExactSize {
         inner: Len {
@@ -129,10 +129,7 @@ pub fn with_ref<'slice, T, U>(
         },
     };
 
-    let slice = Ref {
-        slice,
-        tag: len.inner.tag,
-    };
+    let slice = unsafe { Slice::new_unchecked(slice, len.inner.tag) };
 
     f(slice, len)
 }
@@ -143,7 +140,7 @@ pub fn with_ref<'slice, T, U>(
 /// length tag. It has no control over the exact lifetime used for the tag.
 pub fn with_mut<'slice, T, U>(
     slice: &'slice mut [T],
-    f: impl for<'r> FnOnce(Mut<'slice, T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
+    f: impl for<'r> FnOnce(&'slice mut Slice<T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
 ) -> U {
     let len = ExactSize {
         inner: Len {
@@ -154,10 +151,7 @@ pub fn with_mut<'slice, T, U>(
         },
     };
 
-    let slice = Mut {
-        slice,
-        tag: len.inner.tag,
-    };
+    let slice = unsafe { Slice::new_unchecked_mut(slice, len.inner.tag) };
 
     f(slice, len)
 }
@@ -227,25 +221,13 @@ pub struct Eq<TagA, TagB> {
 
 /// A slice with a unique type tag.
 ///
-/// You can only construct this via [`Len::with_ref`].
+/// You can only construct this via [`Len::with_ref`] and [`Len::with_mut`].
 ///
 /// [`Len::with_ref`]: struct.Len.html#method.with_ref
-#[derive(Clone, Copy)]
-pub struct Ref<'slice, T, Tag> {
-    slice: &'slice [T],
+pub struct Slice<T, Tag> {
     #[allow(dead_code)]
     tag: Tag,
-}
-
-/// A mutable slice with a unique type tag.
-///
-/// You can only construct this via [`Len::with_mut`].
-///
-/// [`Len::with_mut`]: struct.Len.html#method.with_mut
-pub struct Mut<'slice, T, Tag> {
-    slice: &'slice mut [T],
-    #[allow(dead_code)]
-    tag: Tag,
+    slice: [T],
 }
 
 /// An owned, allocated slice with a checked length.
@@ -280,12 +262,12 @@ unsafe impl<T: ConstantSource> Tag for Constant<T> {}
 /// # Usage
 ///
 /// ```
-/// use index_ext::tag::{Const, Ref};
+/// use index_ext::tag::{Const, Slice};
 ///
 /// let size = Const::<8>::EXACT_SIZE;
 ///
 /// let data = [0, 1, 2, 3, 4, 5, 6, 7];
-/// let slice = Ref::new(&data[..], size).unwrap();
+/// let slice = Slice::new(&data[..], size).unwrap();
 ///
 /// let prefix = size
 ///     .into_len()
@@ -602,8 +584,9 @@ impl<'lt> Generative<'lt> {
 
     /// Consume a generativity token to associated a lifetime with the slice's length.
     ///
-    /// This isn't fundamentally different from using [`with_len`] and [`Mut::new`], and you might
-    /// want to see those documentations, but it clarifies that this combination is infallible.
+    /// This isn't fundamentally different from using [`with_len`] and [`Slice::new`], and you
+    /// might want to see those documentations, but it clarifies that this combination is
+    /// infallible.
     ///
     /// # Usage
     ///
@@ -625,18 +608,19 @@ impl<'lt> Generative<'lt> {
     pub fn with_ref<'slice, T>(
         slice: &'slice [T],
         token: generativity::Guard<'lt>,
-    ) -> (Ref<'slice, T, Self>, ExactSize<Self>) {
+    ) -> (&'slice Slice<T, Self>, ExactSize<Self>) {
         let size = ExactSize::with_guard(slice.len(), token);
         // Safety: This tag is associated with the exact length of the slice in the line above
         // which is less or equal to the length of the slice.
-        let ref_ = unsafe { Ref::new_unchecked(slice, size.inner.tag) };
+        let ref_ = unsafe { Slice::new_unchecked(slice, size.inner.tag) };
         (ref_, size)
     }
 
     /// Consume a generativity token to associated a lifetime with the mutable slice's length.
     ///
-    /// This isn't fundamentally different from using [`with_len`] and [`Ref::new`], and you might
-    /// want to see those documentations, but it clarifies that this combination is infallible.
+    /// This isn't fundamentally different from using [`with_len`] and [`Slice::new_mut`], and you
+    /// might want to see those documentations, but it clarifies that this combination is
+    /// infallible.
     ///
     /// # Usage
     ///
@@ -657,11 +641,11 @@ impl<'lt> Generative<'lt> {
     pub fn with_mut<'slice, T>(
         slice: &'slice mut [T],
         token: generativity::Guard<'lt>,
-    ) -> (Mut<'slice, T, Self>, ExactSize<Self>) {
+    ) -> (&'slice mut Slice<T, Self>, ExactSize<Self>) {
         let size = ExactSize::with_guard(slice.len(), token);
         // Safety: This tag is associated with the exact length of the slice in the line above
         // which is less or equal to the length of the slice.
-        let ref_ = unsafe { Mut::new_unchecked(slice, size.inner.tag) };
+        let ref_ = unsafe { Slice::new_unchecked_mut(slice, size.inner.tag) };
         (ref_, size)
     }
 }
@@ -694,7 +678,8 @@ impl<T: Tag> ExactSize<T> {
     ///
     /// All `ExactSize` instances with the same tag type must also have the same `len` field.
     pub unsafe fn new(len: usize, tag: T) -> Self {
-        Self::new_untagged(len, tag)
+        // Safety: Propagates the exact same safety requirements.
+        unsafe { Self::new_untagged(len, tag) }
     }
 
     /// Construct a new bound from a length.
@@ -704,7 +689,8 @@ impl<T: Tag> ExactSize<T> {
     /// You _must_ ensure that no slice with this same tag can be shorter than `len`. In particular
     /// there mustn't be any other `ExactSize` with a differing length.
     pub unsafe fn from_len(len: Len<T>) -> Self {
-        Self::from_len_untagged(len)
+        // Safety: Propagates a subset of safety requirements.
+        unsafe { Self::from_len_untagged(len) }
     }
 
     /// Construct a new bound from a capacity.
@@ -714,7 +700,8 @@ impl<T: Tag> ExactSize<T> {
     /// You _must_ ensure that no index with this same tag can be above `cap`. In particular there
     /// mustn't be any other `ExactSize` with a differing length but the same tag type.
     pub unsafe fn from_capacity(cap: Capacity<T>) -> Self {
-        Self::new_untagged(cap.len, cap.tag)
+        // Safety: Propagates a subset of safety requirements.
+        unsafe { Self::new_untagged(cap.len, cap.tag) }
     }
 
     /// Interpret this with the tag of an equal sized slice.
@@ -999,17 +986,27 @@ impl<T> Idx<Range<usize>, T> {
     }
 }
 
-impl<'slice, T: Tag, E> Ref<'slice, E, T> {
+#[allow(unused_unsafe)]
+impl<T: Tag, E> Slice<E, T> {
     /// Try to wrap a slice into a safe index wrapper.
     ///
     /// Returns `Some(_)` if the slice is at least as long as the `size` requires, otherwise
     /// returns `None`.
-    pub fn new(slice: &'slice [E], size: ExactSize<T>) -> Option<Self> {
+    pub fn new(slice: &[E], size: ExactSize<T>) -> Option<&'_ Self> {
         if slice.len() >= size.into_len().get() {
-            Some(Ref {
-                slice,
-                tag: size.inner.tag,
-            })
+            Some(unsafe { Self::new_unchecked(slice, size.inner.tag) })
+        } else {
+            None
+        }
+    }
+
+    /// Try to wrap a mutable slice into a safe index wrapper.
+    ///
+    /// Returns `Some(_)` if the slice is at least as long as the `size` requires, otherwise
+    /// returns `None`.
+    pub fn new_mut(slice: &mut [E], size: ExactSize<T>) -> Option<&'_ mut Self> {
+        if slice.len() >= size.into_len().get() {
+            Some(unsafe { Self::new_unchecked_mut(slice, size.inner.tag) })
         } else {
             None
         }
@@ -1021,83 +1018,58 @@ impl<'slice, T: Tag, E> Ref<'slice, E, T> {
     ///
     /// The caller must uphold that the _exact size_ associated with the type `Tag` (see
     /// [`ExactSize::new_untagged`]) is at most as large as the length of this slice.
-    pub unsafe fn new_unchecked(slice: &'slice [E], tag: T) -> Self {
-        Ref { slice, tag }
+    pub unsafe fn new_unchecked(slice: &[E], _: T) -> &'_ Self {
+        // SAFETY: by T: Tag we know that T is 1-ZST which makes Self have the same layout as [E].
+        // Further, tag is evidence that T is inhabited and T: Copy implies T: !Drop.
+        // Finally, the tag is valid for the slice's length by assumption of relying on the caller.
+        unsafe { &*(slice as *const [E] as *const Self) }
+    }
+
+    /// Unsafely wrap a mutable slice into an index wrapper.
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold that the _exact size_ associated with the type `Tag` (see
+    /// [`ExactSize::new_untagged`]) is at most as large as the length of this slice.
+    pub unsafe fn new_unchecked_mut(slice: &mut [E], _: T) -> &'_ mut Self {
+        // SAFETY: by T: Tag we know that T is 1-ZST which makes Self have the same layout as [E].
+        // Further, tag is evidence that T is inhabited and T: Copy implies T: !Drop.
+        // Finally, the tag is valid for the slice's length by assumption of relying on the caller.
+        unsafe { &mut *(slice as *mut [E] as *mut Self) }
+    }
+
+    /// Interpret this as a slice with smaller length.
+    pub fn with_tag<NewT: Tag>(&self, _: LessEq<NewT, T>) -> &'_ Slice<E, NewT> {
+        // SAFETY: by NewT: Tag we know that T NewT is 1-ZST which makes Self have the same layout
+        // as [E] and consequently the same layout as Self.  Further, smaller.a is evidence that
+        // NewT is inhabited and NewT: Copy implies NewT: !Drop. Finally, the tag is valid for the
+        // slice's length by assumption of relying on self.element being valid based on the
+        // invariant of Self.
+        unsafe { &*(self as *const Self as *const Slice<E, NewT>) }
+    }
+
+    /// Interpret this as a slice with smaller length.
+    pub fn with_tag_mut<NewT: Tag>(&mut self, _: LessEq<NewT, T>) -> &'_ mut Slice<E, NewT> {
+        // SAFETY: by NewT: Tag we know that T NewT is 1-ZST which makes Self have the same layout
+        // as [E] and consequently the same layout as Self.  Further, smaller.a is evidence that
+        // NewT is inhabited and NewT: Copy implies NewT: !Drop. Finally, the tag is valid for the
+        // slice's length by assumption of relying on self.element being valid based on the
+        // invariant of Self.
+        unsafe { &mut *(self as *mut Self as *mut Slice<E, NewT>) }
     }
 
     /// Get the length as a `Capacity` of all slices with this tag.
     pub fn capacity(&self) -> Capacity<T> {
         Capacity {
-            len: self.len(),
+            len: self.slice.len(),
             tag: self.tag,
-        }
-    }
-
-    /// Index the slice unchecked but soundly.
-    pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
-        unsafe { self.slice.get_unchecked(index.idx) }
-    }
-
-    /// Index the slice unchecked but soundly.
-    pub fn into_safe<I: core::slice::SliceIndex<[E]>>(self, index: Idx<I, T>) -> &'slice I::Output {
-        unsafe { self.slice.get_unchecked(index.idx) }
-    }
-
-    /// Unwrap the inner slice, dropping all assertions of safe indexing.
-    pub fn into_inner(self) -> &'slice [E] {
-        self.slice
-    }
-
-    /// Interpret this as a slice with smaller length.
-    pub fn with_tag<NewT>(self, smaller: LessEq<NewT, T>) -> Ref<'slice, E, NewT> {
-        Ref {
-            slice: self.slice,
-            tag: smaller.a,
         }
     }
 }
 
-impl<'slice, T: Tag, E> Mut<'slice, E, T> {
-    /// Try to wrap a slice into a safe index wrapper.
-    ///
-    /// Returns `Some(_)` if the slice is at least as long as the `size` requires, otherwise
-    /// returns `None`.
-    pub fn new(slice: &'slice mut [E], size: ExactSize<T>) -> Option<Self> {
-        if slice.len() >= size.into_len().get() {
-            Some(Mut {
-                slice,
-                tag: size.inner.tag,
-            })
-        } else {
-            None
-        }
-    }
-
-    /// Unsafely wrap a slice into an index wrapper.
-    ///
-    /// # Safety
-    ///
-    /// The caller must uphold that the _exact size_ associated with the type `Tag` (see
-    /// [`ExactSize::new_untagged`]) is at most as large as the length of this slice.
-    pub unsafe fn new_unchecked(slice: &'slice mut [E], tag: T) -> Self {
-        Mut { slice, tag }
-    }
-
-    /// Get the length as a `Capacity` of all slices with this tag.
-    pub fn capacity(&self) -> Capacity<T> {
-        Capacity {
-            len: self.len(),
-            tag: self.tag,
-        }
-    }
-
+impl<T, E> Slice<E, T> {
     /// Index the slice unchecked but soundly.
     pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
-        unsafe { self.slice.get_unchecked(index.idx) }
-    }
-
-    /// Index the slice unchecked but soundly.
-    pub fn into_safe<I: core::slice::SliceIndex<[E]>>(self, index: Idx<I, T>) -> &'slice I::Output {
         unsafe { self.slice.get_unchecked(index.idx) }
     }
 
@@ -1107,27 +1079,6 @@ impl<'slice, T: Tag, E> Mut<'slice, E, T> {
         index: Idx<I, T>,
     ) -> &mut I::Output {
         unsafe { self.slice.get_unchecked_mut(index.idx) }
-    }
-
-    /// Index the slice unchecked but soundly.
-    pub fn into_safe_mut<I: core::slice::SliceIndex<[E]>>(
-        self,
-        index: Idx<I, T>,
-    ) -> &'slice mut I::Output {
-        unsafe { self.slice.get_unchecked_mut(index.idx) }
-    }
-
-    /// Unwrap the inner slice, dropping all assertions of safe indexing.
-    pub fn into_inner(self) -> &'slice [E] {
-        self.slice
-    }
-
-    /// Interpret this as a slice with smaller length.
-    pub fn with_tag<NewT>(self, smaller: LessEq<NewT, T>) -> Mut<'slice, E, NewT> {
-        Mut {
-            slice: self.slice,
-            tag: smaller.a,
-        }
     }
 }
 
@@ -1140,7 +1091,7 @@ impl<T: Tag, E> Boxed<E, T> {
         inner: alloc::boxed::Box<[E]>,
         len: ExactSize<T>,
     ) -> Result<Self, alloc::boxed::Box<[E]>> {
-        match Ref::new(&*inner, len) {
+        match Slice::new(&*inner, len) {
             Some(_) => Ok(Boxed {
                 inner,
                 tag: len.inner.tag,
@@ -1149,20 +1100,18 @@ impl<T: Tag, E> Boxed<E, T> {
         }
     }
 
-    /// Reference the contents as an asserted `Ref` slice.
-    pub fn as_ref(&self) -> Ref<'_, E, T> {
-        Ref {
-            slice: &*self.inner,
-            tag: self.tag,
-        }
+    /// Reference the contents as an asserted `Slice`.
+    pub fn as_ref(&self) -> &'_ Slice<E, T> {
+        // SAFETY: the inner invariant of `Boxed` is that the length is at least as large as the
+        // `ExactSize`, ensured in its only constructor `new`.
+        unsafe { Slice::new_unchecked(&*self.inner, self.tag) }
     }
 
-    /// Reference the contents as an asserted mutable `Mut` slice.
-    pub fn as_mut(&mut self) -> Mut<'_, E, T> {
-        Mut {
-            slice: &mut *self.inner,
-            tag: self.tag,
-        }
+    /// Reference the contents as an asserted mutable `Slice`.
+    pub fn as_mut(&mut self) -> &'_ mut Slice<E, T> {
+        // SAFETY: the inner invariant of `Boxed` is that the length is at least as large as the
+        // `ExactSize`, ensured in its only constructor `new`.
+        unsafe { Slice::new_unchecked_mut(&mut *self.inner, self.tag) }
     }
 
     /// Get the length as a `Capacity` of all slices with this tag.
@@ -1175,7 +1124,7 @@ impl<T: Tag, E> Boxed<E, T> {
 
     /// Index the boxed slice unchecked but soundly.
     pub fn get_safe<I: core::slice::SliceIndex<[E]>>(&self, index: Idx<I, T>) -> &I::Output {
-        self.as_ref().into_safe(index)
+        self.as_ref().get_safe(index)
     }
 
     /// Mutably index the boxed slice unchecked but soundly.
@@ -1183,7 +1132,7 @@ impl<T: Tag, E> Boxed<E, T> {
         &mut self,
         index: Idx<I, T>,
     ) -> &mut I::Output {
-        self.as_mut().into_safe_mut(index)
+        self.as_mut().get_safe_mut(index)
     }
 
     /// Unwrap the inner box, dropping all assertions of safe indexing.
@@ -1192,27 +1141,20 @@ impl<T: Tag, E> Boxed<E, T> {
     }
 }
 
-impl<E, T> core::ops::Deref for Ref<'_, E, T> {
+impl<E, T> core::ops::Deref for Slice<E, T> {
     type Target = [E];
     fn deref(&self) -> &[E] {
-        self.slice
+        &self.slice
     }
 }
 
-impl<E, T> core::ops::Deref for Mut<'_, E, T> {
-    type Target = [E];
-    fn deref(&self) -> &[E] {
-        self.slice
-    }
-}
-
-impl<E, T> core::ops::DerefMut for Mut<'_, E, T> {
+impl<E, T> core::ops::DerefMut for Slice<E, T> {
     fn deref_mut(&mut self) -> &mut [E] {
-        self.slice
+        &mut self.slice
     }
 }
 
-impl<T: Tag, E, I> core::ops::Index<Idx<I, T>> for Ref<'_, E, T>
+impl<T: Tag, E, I> core::ops::Index<Idx<I, T>> for Slice<E, T>
 where
     I: core::slice::SliceIndex<[E]>,
 {
@@ -1222,17 +1164,7 @@ where
     }
 }
 
-impl<T: Tag, E, I> core::ops::Index<Idx<I, T>> for Mut<'_, E, T>
-where
-    I: core::slice::SliceIndex<[E]>,
-{
-    type Output = I::Output;
-    fn index(&self, idx: Idx<I, T>) -> &Self::Output {
-        self.get_safe(idx)
-    }
-}
-
-impl<T: Tag, E, I> core::ops::IndexMut<Idx<I, T>> for Mut<'_, E, T>
+impl<T: Tag, E, I> core::ops::IndexMut<Idx<I, T>> for Slice<E, T>
 where
     I: core::slice::SliceIndex<[E]>,
 {
@@ -1279,16 +1211,16 @@ impl<const N: usize> Const<N> {
         // SAFETY: all instances have the same length, `N`.
         unsafe { ExactSize::new_untagged(N, Const) };
 
-    /// Create a [`Ref`] wrapping the array.
-    pub fn to_ref<T>(self, arr: &[T; N]) -> Ref<'_, T, Self> {
-        unsafe { Ref::new_unchecked(&arr[..], self) }
+    /// Create a [`Slice`] wrapping the array.
+    pub fn to_ref<T>(self, arr: &[T; N]) -> &'_ Slice<T, Self> {
+        unsafe { Slice::new_unchecked(&arr[..], self) }
     }
 
-    /// Create a [`Mut`] wrapping the array mutably.
+    /// Create a [`Slice`] wrapping the array mutably.
     // Internal consistency in naming deemed more important.
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_mut<T>(self, arr: &[T; N]) -> Ref<'_, T, Self> {
-        unsafe { Ref::new_unchecked(&arr[..], self) }
+    pub fn to_mut<T>(self, arr: &mut [T; N]) -> &'_ mut Slice<T, Self> {
+        unsafe { Slice::new_unchecked_mut(&mut arr[..], self) }
     }
 }
 
@@ -1411,7 +1343,7 @@ mod impl_of_boxed_idx {
 
 #[cfg(test)]
 mod tests {
-    use super::{with_ref, Constant, ConstantSource, Eq, LessEq, Mut};
+    use super::{with_ref, Constant, ConstantSource, Eq, LessEq, Slice};
 
     #[test]
     fn basics() {
@@ -1441,7 +1373,7 @@ mod tests {
         let mut buffer = [0u8; 4];
         let csize = Constant::<ConstantLen>::EXACT_SIZE;
 
-        let slice = Mut::new(&mut buffer[..], csize).unwrap();
+        let slice = Slice::new_mut(&mut buffer[..], csize).unwrap();
         assert_eq!(slice.len(), ConstantLen::LEN);
         let all = csize.into_len().range_to_self();
 
