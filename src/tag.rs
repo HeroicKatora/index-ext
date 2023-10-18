@@ -21,7 +21,7 @@
 //!    the associated length as a fixed number. The former let's you give it a type as a name while
 //!    the latter is based on generic parameters.
 //!
-//! 2. The generative way. The [`Generative`]` type is unique for every created instance by having
+//! 2. The generative way. The [`Generative`] type is unique for every created instance by having
 //!    a unique lifetime parameter.  That is, you can not choose its lifetime parameters freely.
 //!    Instead, to create an instance you write a function be prepared to handle arbitrary lifetime
 //!    and the library hands an instance to you. This makes the exact lifetime opaque to you and
@@ -50,8 +50,10 @@
 //!
 //! Additionally, the module provides an 'algebra' for tags such that you can dynamically prove two
 //! tags to be equivalent, comparable, etc. Then you can leverage these facts (which are also
-//! encoded as types) to substitute tags in different manner. See the [`LessEq`] and [`Eq`] types
-//! as well as the many combinators on [`ExactSize`], [`Len`], and [`Idx`].
+//! encoded as types) to substitute tags in different manner. See the [`LessEq`] and [`struct@Eq`]
+//! types as well as the many combinators on [`ExactSize`], [`Len`], and [`Idx`]. This is possible
+//! since each tag merely represents a 'dependently typed' (intuitionistic, extensional) predicate
+//! on the length of some particular slice value.
 //!
 //! ## Checked constant bounds
 //!
@@ -114,12 +116,16 @@ pub struct Named<T> {
 
 /// Enter a region for soundly indexing a slice without bounds checks.
 ///
+/// Prefer [`Generative::with_ref`] if possible.
+///
 /// The supplied function gets a freshly constructed pair of corresponding slice reference and
 /// length tag. It has no control over the exact lifetime used for the tag.
 pub fn with_ref<'slice, T, U>(
     slice: &'slice [T],
     f: impl for<'r> FnOnce(&'slice Slice<T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
 ) -> U {
+    // We can not use `Generative::with_ref` here due to a lifetime conflict. If this was defined
+    // in this body then it would not outlive `'slice`.
     let len = ExactSize {
         inner: Len {
             len: slice.len(),
@@ -136,12 +142,16 @@ pub fn with_ref<'slice, T, U>(
 
 /// Enter a region for soundly indexing a mutable slice without bounds checks.
 ///
+/// Prefer [`Generative::with_mut`] if possible.
+///
 /// The supplied function gets a freshly constructed pair of corresponding slice reference and
 /// length tag. It has no control over the exact lifetime used for the tag.
 pub fn with_mut<'slice, T, U>(
     slice: &'slice mut [T],
     f: impl for<'r> FnOnce(&'slice mut Slice<T, Generative<'r>>, ExactSize<Generative<'r>>) -> U,
 ) -> U {
+    // We can not use `Generative::with_mut` here due to a lifetime conflict. If this was defined
+    // in this body then it would not outlive `'slice`.
     let len = ExactSize {
         inner: Len {
             len: slice.len(),
@@ -194,8 +204,9 @@ pub struct NonZeroLen<Tag> {
 /// The _exact_ length separating slices and indices for a tag.
 ///
 /// This serves as an constructor basis for 'importing' lengths and slices that are not previously
-/// connected through `with_ref`. This is also useful for cases where you want to create some
-/// bounds prior to the slice being available, or for creating bounds of custom tags.
+/// connected through [`with_ref`] or equivalent constructors. This is also useful for cases where
+/// you want to create some bounds prior to the slice being available, or for creating bounds of
+/// custom tags.
 #[derive(Clone, Copy)]
 pub struct ExactSize<Tag> {
     inner: Len<Tag>,
@@ -221,9 +232,9 @@ pub struct Eq<TagA, TagB> {
 
 /// A slice with a unique type tag.
 ///
-/// You can only construct this via [`Len::with_ref`] and [`Len::with_mut`].
+/// You can only construct this via the tag semantics associated with the type parameter, `Tag`.
+/// For instance see [`with_ref`], [`Generative::with_ref`], [`Const::with_ref`].
 ///
-/// [`Len::with_ref`]: struct.Len.html#method.with_ref
 pub struct Slice<T, Tag> {
     #[allow(dead_code)]
     tag: Tag,
@@ -584,9 +595,12 @@ impl<'lt> Generative<'lt> {
 
     /// Consume a generativity token to associated a lifetime with the slice's length.
     ///
-    /// This isn't fundamentally different from using [`with_len`] and [`Slice::new`], and you
-    /// might want to see those documentations, but it clarifies that this combination is
+    /// This isn't fundamentally different from using [`Self::with_len`] and [`Slice::new`], and
+    /// you might want to see those documentations, but it clarifies that this combination is
     /// infallible.
+    ///
+    /// This essentially shares the generative uniqueness of the lifetime among all values relying
+    /// on the length predicate of the same slice.
     ///
     /// # Usage
     ///
@@ -618,9 +632,12 @@ impl<'lt> Generative<'lt> {
 
     /// Consume a generativity token to associated a lifetime with the mutable slice's length.
     ///
-    /// This isn't fundamentally different from using [`with_len`] and [`Slice::new_mut`], and you
-    /// might want to see those documentations, but it clarifies that this combination is
+    /// This isn't fundamentally different from using [`Self::with_len`] and [`Slice::new_mut`],
+    /// and you might want to see those documentations, but it clarifies that this combination is
     /// infallible.
+    ///
+    /// This essentially shares the generative uniqueness of the lifetime among all values relying
+    /// on the length predicate of the same slice.
     ///
     /// # Usage
     ///
@@ -1212,14 +1229,12 @@ impl<const N: usize> Const<N> {
         unsafe { ExactSize::new_untagged(N, Const) };
 
     /// Create a [`Slice`] wrapping the array.
-    pub fn to_ref<T>(self, arr: &[T; N]) -> &'_ Slice<T, Self> {
+    pub fn with_ref<T>(self, arr: &[T; N]) -> &'_ Slice<T, Self> {
         unsafe { Slice::new_unchecked(&arr[..], self) }
     }
 
     /// Create a [`Slice`] wrapping the array mutably.
-    // Internal consistency in naming deemed more important.
-    #[allow(clippy::wrong_self_convention)]
-    pub fn to_mut<T>(self, arr: &mut [T; N]) -> &'_ mut Slice<T, Self> {
+    pub fn with_mut<T>(self, arr: &mut [T; N]) -> &'_ mut Slice<T, Self> {
         unsafe { Slice::new_unchecked_mut(&mut arr[..], self) }
     }
 }

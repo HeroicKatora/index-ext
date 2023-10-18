@@ -3,7 +3,7 @@
 //! The crate is separated by modules which each roughly explore one particular index-related idea.
 //! As an overview, the main modules are:
 //!
-//! - In the [`array`] module, a solution for repetitive try-into-unwrapping in the process of
+//! - In the [`mod@array`] module, a solution for repetitive try-into-unwrapping in the process of
 //!   interpreting slices as fixed-width arrays is presented.
 //! - In the [`int`] module, we explore numerical types with fallible conversion to indices on use,
 //!   interpreting a failure as out-of-bounds.
