@@ -73,21 +73,6 @@ pub mod int;
 pub mod mem;
 pub mod tag;
 
-/// A trait for mathematical integer based indices.
-///
-/// Any integer can be used as a fallible index where a machine word can be used by first trying to
-/// convert it into a `usize` and then indexing with the original method. From the point of the
-/// user, the effect is not much different. If `10usize` is out-of-bounds then so is any other
-/// integer representing the number `10`, no matter the allowed magnitude of its type. The same
-/// holds for integers that permit negative indices.
-///
-/// The output type of the indexing operation is an element or a slice respectively.
-///
-/// This trait enables the generic [`SliceIntExt::get_int`] method.
-///
-/// [`SliceIntExt::get_int`]: trait.Intex.html#fn.get_int
-pub trait IntSliceIndex<T: ?Sized>: int::sealed::SealedSliceIndex<T> {}
-
 pub use int::SliceIntExt;
 
 /// Convert an arbitrary integer into an index.

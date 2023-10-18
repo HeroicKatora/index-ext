@@ -20,109 +20,6 @@ use core::ops::{Range, RangeFrom, RangeTo};
 use core::slice::SliceIndex;
 
 use self::sealed::{IndexSealed, IntoIntIndex};
-use super::IntSliceIndex;
-
-/// Sealed traits for making `Intex` work as an index, without exposing too much.
-///
-/// ## Navigating the jungle of traits
-/// The main point here is to properly seal the traits. Parts of this are meant to be adopted by
-/// `core` at some point, this prevents some unwanted usage. Also note that user defined types
-/// convertible with `TryFromIntError` _should_ require slightly more ceremony.
-///
-/// So the `IntSliceIndex` is a parallel of `core::slice::SliceIndex` and inherited from the
-/// exposed `crate::IntSliceIndex`. It also contains the interface which we use internally. We
-/// can't define unstable methods, and methods would be inherited despite the hidden sealed trait.
-///
-/// ```
-/// mod sealed {
-///     pub trait Seal {
-///         fn can_be_observed(&self);
-///     }
-/// }
-///
-/// trait Public: sealed::Seal {}
-///
-/// fn with_public<T: Public>(t: &T) {
-///     t.can_be_observed();
-/// }
-/// ```
-///
-/// To work around this issue, we use two sealed traits with the same symbols. As neither can be
-/// named the necessary disambiguation can not be performed in a downstream crate.
-pub(crate) mod sealed {
-    use core::num::TryFromIntError;
-
-    /// A trait abstracting slice independent index behaviour, `ops::Index` can use on this.
-    ///
-    /// This is for two reasons. The panic message is improved by mentioning the original inputs.
-    /// But this requires the additional bounds of `Copy`, which is not available for `Range` due
-    /// to historical issues. By not exposing this we can always relax this later when, and if,
-    /// specialization becomes available to stable Rust.
-    pub trait IndexSealed {
-        /// Punts the `Copy` bound to the implementor.
-        fn copy(&self) -> Self;
-        #[cold]
-        fn panic_msg(limit: usize, idx: Self) -> !;
-    }
-
-    /// Provide one canonical conversion to an index.
-    ///
-    /// We use this converter to provide the methods of `IntSliceIndex` in the macro expanded
-    /// implementation.
-    pub trait IntoIntIndex {
-        type IntoIndex;
-        fn index(self) -> Result<Self::IntoIndex, TryFromIntError>;
-    }
-
-    /// Defines actual indexing on a potentially unsized type.
-    ///
-    /// This is sealed as well, as it contains the otherwise exposed `Index` item whose bounds we
-    /// may later want to adjust.
-    pub trait IntSliceIndex<T: ?Sized>: Sized {
-        type Output: ?Sized;
-        fn get(self, slice: &T) -> Option<&Self::Output>;
-        fn get_mut(self, slice: &mut T) -> Option<&mut Self::Output>;
-        unsafe fn get_unchecked(self, slice: &T) -> &Self::Output;
-        unsafe fn get_unchecked_mut(self, slice: &mut T) -> &mut Self::Output;
-        fn index(self, slice: &T) -> &Self::Output;
-        fn index_mut(self, slice: &mut T) -> &mut Self::Output;
-    }
-
-    /// Seals the `Intex` extension trait.
-    /// The methods added there are intended to be like inherent methods on the respective
-    /// implementors which means additional implementors are not intended.
-    pub trait SealedSliceIntExt {}
-
-    /// Stops downstream from using the `IntSliceIndex` methods and associate type by having a
-    /// redundant pair of the same definitions. Methods do not have the same result type as this
-    /// does not influence type deduction and makes it clear that _we_ should never call them.
-    /// Hence, all methods provided here are actually unreachable.
-    pub trait SealedSliceIndex<T: ?Sized>: IntSliceIndex<T> {
-        type Output: ?Sized;
-        fn get(self, _: &T) -> ! {
-            unreachable!()
-        }
-        fn get_mut(self, _: &mut T) -> ! {
-            unreachable!()
-        }
-        unsafe fn get_unchecked(self, _: &T) -> ! {
-            unreachable!()
-        }
-        unsafe fn get_unchecked_mut(self, _: &mut T) -> ! {
-            unreachable!()
-        }
-        fn index(self, _: &T) -> ! {
-            unreachable!()
-        }
-        fn index_mut(self, _: &mut T) -> ! {
-            unreachable!()
-        }
-    }
-
-    impl<U: ?Sized, T: IntSliceIndex<U>> SealedSliceIndex<U> for T {
-        type Output = <Self as IntSliceIndex<U>>::Output;
-    }
-}
 
 /// An extension trait allowing slices to be indexed by everything convertible to `usize`.
 pub trait SliceIntExt: sealed::SealedSliceIntExt {
@@ -229,6 +126,123 @@ pub trait SliceIntExt: sealed::SealedSliceIntExt {
     ) -> &'_ mut <T as sealed::IntSliceIndex<Self>>::Output
     where
         T: IntSliceIndex<Self>;
+}
+
+/// A trait for mathematical integer based indices.
+///
+/// Any integer can be used as a fallible index where a machine word can be used by first trying to
+/// convert it into a `usize` and then indexing with the original method. From the point of the
+/// user, the effect is not much different. If `10usize` is out-of-bounds then so is any other
+/// integer representing the number `10`, no matter the allowed magnitude of its type. The same
+/// holds for integers that permit negative indices.
+///
+/// The output type of the indexing operation is an element or a slice respectively.
+///
+/// This trait enables the generic [`SliceIntExt::get_int`] method.
+///
+/// [`SliceIntExt::get_int`]: trait.Intex.html#fn.get_int
+pub trait IntSliceIndex<T: ?Sized>: sealed::SealedSliceIndex<T> {}
+
+/// Sealed traits for making `Intex` work as an index, without exposing too much.
+///
+/// ## Navigating the jungle of traits
+/// The main point here is to properly seal the traits. Parts of this are meant to be adopted by
+/// `core` at some point, this prevents some unwanted usage. Also note that user defined types
+/// convertible with `TryFromIntError` _should_ require slightly more ceremony.
+///
+/// So the `IntSliceIndex` is a parallel of `core::slice::SliceIndex` and inherited from the
+/// exposed `crate::IntSliceIndex`. It also contains the interface which we use internally. We
+/// can't define unstable methods, and methods would be inherited despite the hidden sealed trait.
+///
+/// ```
+/// mod sealed {
+///     pub trait Seal {
+///         fn can_be_observed(&self);
+///     }
+/// }
+///
+/// trait Public: sealed::Seal {}
+///
+/// fn with_public<T: Public>(t: &T) {
+///     t.can_be_observed();
+/// }
+/// ```
+///
+/// To work around this issue, we use two sealed traits with the same symbols. As neither can be
+/// named the necessary disambiguation can not be performed in a downstream crate.
+pub(crate) mod sealed {
+    use core::num::TryFromIntError;
+
+    /// A trait abstracting slice independent index behaviour, `ops::Index` can use on this.
+    ///
+    /// This is for two reasons. The panic message is improved by mentioning the original inputs.
+    /// But this requires the additional bounds of `Copy`, which is not available for `Range` due
+    /// to historical issues. By not exposing this we can always relax this later when, and if,
+    /// specialization becomes available to stable Rust.
+    pub trait IndexSealed {
+        /// Punts the `Copy` bound to the implementor.
+        fn copy(&self) -> Self;
+        #[cold]
+        fn panic_msg(limit: usize, idx: Self) -> !;
+    }
+
+    /// Provide one canonical conversion to an index.
+    ///
+    /// We use this converter to provide the methods of `IntSliceIndex` in the macro expanded
+    /// implementation.
+    pub trait IntoIntIndex {
+        type IntoIndex;
+        fn index(self) -> Result<Self::IntoIndex, TryFromIntError>;
+    }
+
+    /// Defines actual indexing on a potentially unsized type.
+    ///
+    /// This is sealed as well, as it contains the otherwise exposed `Index` item whose bounds we
+    /// may later want to adjust.
+    pub trait IntSliceIndex<T: ?Sized>: Sized {
+        type Output: ?Sized;
+        fn get(self, slice: &T) -> Option<&Self::Output>;
+        fn get_mut(self, slice: &mut T) -> Option<&mut Self::Output>;
+        unsafe fn get_unchecked(self, slice: &T) -> &Self::Output;
+        unsafe fn get_unchecked_mut(self, slice: &mut T) -> &mut Self::Output;
+        fn index(self, slice: &T) -> &Self::Output;
+        fn index_mut(self, slice: &mut T) -> &mut Self::Output;
+    }
+
+    /// Seals the `Intex` extension trait.
+    /// The methods added there are intended to be like inherent methods on the respective
+    /// implementors which means additional implementors are not intended.
+    pub trait SealedSliceIntExt {}
+
+    /// Stops downstream from using the `IntSliceIndex` methods and associate type by having a
+    /// redundant pair of the same definitions. Methods do not have the same result type as this
+    /// does not influence type deduction and makes it clear that _we_ should never call them.
+    /// Hence, all methods provided here are actually unreachable.
+    pub trait SealedSliceIndex<T: ?Sized>: IntSliceIndex<T> {
+        type Output: ?Sized;
+        fn get(self, _: &T) -> ! {
+            unreachable!()
+        }
+        fn get_mut(self, _: &mut T) -> ! {
+            unreachable!()
+        }
+        unsafe fn get_unchecked(self, _: &T) -> ! {
+            unreachable!()
+        }
+        unsafe fn get_unchecked_mut(self, _: &mut T) -> ! {
+            unreachable!()
+        }
+        fn index(self, _: &T) -> ! {
+            unreachable!()
+        }
+        fn index_mut(self, _: &mut T) -> ! {
+            unreachable!()
+        }
+    }
+
+    impl<U: ?Sized, T: IntSliceIndex<U>> SealedSliceIndex<U> for T {
+        type Output = <Self as IntSliceIndex<U>>::Output;
+    }
 }
 
 impl<U> sealed::SealedSliceIntExt for [U] {}
