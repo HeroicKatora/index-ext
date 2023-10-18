@@ -91,10 +91,7 @@ pub trait SliceIntExt: sealed::SealedSliceIntExt {
     ///     assert_eq!(x.get_int_unchecked(1i8), &2);
     /// }
     /// ```
-    unsafe fn get_int_unchecked<T>(
-        &self,
-        idx: T,
-    ) -> &'_ <T as sealed::IntSliceIndex<Self>>::Output
+    unsafe fn get_int_unchecked<T>(&self, idx: T) -> &'_ <T as sealed::IntSliceIndex<Self>>::Output
     where
         T: IntSliceIndex<Self>;
 
@@ -265,10 +262,7 @@ impl<U> SliceIntExt for [U] {
         <T as sealed::IntSliceIndex<Self>>::get_mut(idx, self)
     }
 
-    unsafe fn get_int_unchecked<T>(
-        &self,
-        idx: T,
-    ) -> &'_ <T as sealed::IntSliceIndex<Self>>::Output
+    unsafe fn get_int_unchecked<T>(&self, idx: T) -> &'_ <T as sealed::IntSliceIndex<Self>>::Output
     where
         T: IntSliceIndex<Self>,
     {
@@ -308,10 +302,7 @@ impl SliceIntExt for str {
         <T as sealed::IntSliceIndex<Self>>::get_mut(idx, self)
     }
 
-    unsafe fn get_int_unchecked<T>(
-        &self,
-        idx: T,
-    ) -> &'_ <T as sealed::IntSliceIndex<Self>>::Output
+    unsafe fn get_int_unchecked<T>(&self, idx: T) -> &'_ <T as sealed::IntSliceIndex<Self>>::Output
     where
         T: IntSliceIndex<Self>,
     {

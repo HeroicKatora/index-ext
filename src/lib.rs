@@ -73,8 +73,8 @@ pub mod int;
 pub mod mem;
 pub mod tag;
 
-pub use int::SliceIntExt;
 pub use array::ArrayPrefix;
+pub use int::SliceIntExt;
 
 /// Convert an arbitrary integer into an index.
 ///

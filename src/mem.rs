@@ -325,30 +325,30 @@ integer_diff!(
 
 #[test]
 fn mem_128_operations() {
-   let x = Umem128::new(16).unwrap();
-   // Test: refl-`Eq`.
-   assert!(x == x);
-   // Test: refl-`Ord`.
-   assert!(x <= x);
+    let x = Umem128::new(16).unwrap();
+    // Test: refl-`Eq`.
+    assert!(x == x);
+    // Test: refl-`Ord`.
+    assert!(x <= x);
 
-   // Test: `Ord` for underlying type.
-   assert!(x <= 16u128);
-   assert!(16u128 <= x);
-   // Test: `Eq` for underlying type.
-   assert!(x == 16u128);
-   assert!(16u128 == x);
+    // Test: `Ord` for underlying type.
+    assert!(x <= 16u128);
+    assert!(16u128 <= x);
+    // Test: `Eq` for underlying type.
+    assert!(x == 16u128);
+    assert!(16u128 == x);
 
-   // Test: `Ord` for usize.
-   assert!(x <= 16usize);
-   assert!(16usize <= x);
-   // Test: `Eq` for usize.
-   assert!(x == 16usize);
-   assert!(16usize == x);
+    // Test: `Ord` for usize.
+    assert!(x <= 16usize);
+    assert!(16usize <= x);
+    // Test: `Eq` for usize.
+    assert!(x == 16usize);
+    assert!(16usize == x);
 }
 
 #[cfg(feature = "alloc")]
 #[test]
 fn fmt_128() {
-   let x = Umem128::new(16).unwrap();
-   assert!(alloc::format!("{x}") == "16");
+    let x = Umem128::new(16).unwrap();
+    assert!(alloc::format!("{x}") == "16");
 }
