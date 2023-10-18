@@ -1,14 +1,19 @@
 //! Adds more index types, improving correctness and clarifying intent.
 //!
-//! There are cases where an index type might not be `usize`, many of them for compatibility
-//! reasons. For example, an archive format may choose to always represent its offsets as `u32` or
-//! the `io::Seek` trait which uses `i64` for that purpose. Translating these indices into the
-//! platform native offset type is error prone, potentially lossy, and in case it is done
-//! incorrectly leads to subtle platform dependent bugs.
+//! The crate is separated by modules which each roughly explore one particular index-related idea.
+//! As an overview, the main modules are:
 //!
-//! Wouldn't it be better for this conversion to happen implicitly and correctly where the actual
-//! indexing takes place? That's precisely what `Index` provides. (It's a method and a trait of
-//! the same name, for both panicking and fallible accessors).
+//! - In the [`array`] module, a solution for repetitive try-into-unwrapping in the process of
+//!   interpreting slices as fixed-width arrays is presented.
+//! - In the [`int`] module, we explore numerical types with fallible conversion to indices on use,
+//!   interpreting a failure as out-of-bounds.
+//! - In the [`mem`] module, the efficient representation for the type intersection between
+//!   integers and pointer sized indices is presented as a set of concrete types.
+//! - In the [`tag`] module, we apply fancy type-level mechanisms to move the bounds check inherent
+//!   in safe slice accesses from the usage site to the construction of the index. See in
+//!   particular the Huffman example that demonstrates the optimization potential.
+//!
+//! Read the [`readme`] for some examples. In short:
 //!
 //! ```
 //! use index_ext::{Intex, SliceIntExt};
@@ -19,36 +24,29 @@
 //! assert_eq!([0u8; 2].get_int(u128::max_value()), None);
 //! ```
 //!
-//! ## Nightly features
-//!
-//! * The `ArrayPrefix` type is a const generics enabled index that return arrays `[T; N]` instead
-//! of slices. Due to recent advances in parameter deduction, the length parameter need not even be
-//! named.
-//!
-//! ```
-//! # let slice = [0; 4];
-//! use index_ext::array::ArrayPrefix;
-//! // Grab an array of three element from a slice.
-//! let [r, g, b] = &slice[ArrayPrefix];
-//! ```
-//!
 //! ## Unfinished features
 //!
-//! The marker WIP means it is worked on, Planned that it will be worked on, and Idea that it is
-//! still unevaluated but might be interesting.
+//! The marker WIP means it is worked on, Planned that it might be worked on due to intrigue of the
+//! author, and Idea itself is still unevaluated (looking for a usecase, for instance).
 //!
-//! [Planned]: An index type `CharAt(n: usize)` that dereferences to the characters of a string at
-//! a particular position, represented by a string wrapper that allows converting into a `char`.
-//! Note that a generic `Chars` would not be constant time which may be surprising if used in index
-//! position.
+//! `Planned`: An index type `CharAt(n: usize)` that dereferences to the characters of a string
+//! _around_ a particular position, represented by a string wrapper that allows converting into a
+//! `char`. In contrast to the standard operator, this would only panic for out-of-bounds
+//! coordinates and thus match the main expectation with regards to `len`.
 //!
-//! [Idea]: An index type `InsertWith` for `HashMap` and `BTreeMap` that will construct an
+//! `Idea`: Note that a generic `PrefixChars<N: usize>`, retrieving the first N characters, would
+//! not be constant time which may be surprising if used in index position.
+//!
+//! `Idea`: An index type `InsertWith` for `HashMap` and `BTreeMap` that will construct an
 //! element when an entry is missing, similar to C++, and thus be a panic free alternative. _Maybe_
 //! we could index a `Vec<_>` with this type as well, extending as necessary, but this would again
-//! not be constant time.
+//! not be constant time. The problem here is the super trait relationship `IndexMut: Index` which
+//! might lead to many potential misuses. Also the common alternative of `entry.or_insert` is both
+//! simple an robust already.
 //!
-//! [Idea]: An adapter `OrEmpty` that uses `get` internally and substitutes an empty slice instead
-//! of panicking.
+//! `Idea`: An adapter `OrEmpty` that uses `get` internally and substitutes an empty slice instead
+//! of panicking. Now this is maybe both clear and cute, I'd actually see some use here. It's
+//! unclear for which types to provide it and if there's a SemVer risk.
 //!
 //! ## Design notes
 //!
@@ -87,10 +85,13 @@ pub fn Intex<T>(idx: T) -> int::Intex<T> {
 
 macro_rules! doctest_readme {
     { $content:expr } => {
-        #[doc = $content] extern {}
+        /// A rendered version of the Readme file, documentation purpose only.
+        ///
+        #[doc = $content] pub mod readme {}
     }
 }
 
+#[cfg(doc)]
 doctest_readme!(include_str!("../Readme.md"));
 
 #[cfg(test)]
