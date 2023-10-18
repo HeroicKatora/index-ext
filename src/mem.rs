@@ -132,6 +132,14 @@ macro_rules! lossless_integer {
                 self.into_inner() != *other
             }
         }
+        impl PartialEq<$name> for $under {
+            fn eq(&self, other: &$name) -> bool {
+                *self == other.into_inner()
+            }
+            fn ne(&self, other: &$name) -> bool {
+                *self == other.into_inner()
+            }
+        }
 
         impl PartialEq<$sizet> for $name {
             fn eq(&self, other: &$sizet) -> bool {
@@ -141,16 +149,34 @@ macro_rules! lossless_integer {
                 self.get() != *other
             }
         }
+        impl PartialEq<$name> for $sizet {
+            fn eq(&self, other: &$name) -> bool {
+                *self == other.get()
+            }
+            fn ne(&self, other: &$name) -> bool {
+                *self != other.get()
+            }
+        }
 
         impl PartialOrd<$under> for $name {
             fn partial_cmp(&self, other: &$under) -> Option<core::cmp::Ordering> {
                 self.into_inner().partial_cmp(other)
             }
         }
+        impl PartialOrd<$name> for $under {
+            fn partial_cmp(&self, other: &$name) -> Option<core::cmp::Ordering> {
+                self.partial_cmp(&other.into_inner())
+            }
+        }
 
         impl PartialOrd<$sizet> for $name {
             fn partial_cmp(&self, other: &$sizet) -> Option<core::cmp::Ordering> {
                 self.get().partial_cmp(other)
+            }
+        }
+        impl PartialOrd<$name> for $sizet {
+            fn partial_cmp(&self, other: &$name) -> Option<core::cmp::Ordering> {
+                self.partial_cmp(&other.get())
             }
         }
     };
@@ -299,11 +325,15 @@ fn mem_128_operations() {
 
    // Test: `Ord` for underlying type.
    assert!(x <= 16u128);
+   assert!(16u128 <= x);
    // Test: `Eq` for underlying type.
    assert!(x == 16u128);
+   assert!(16u128 == x);
 
    // Test: `Ord` for usize.
    assert!(x <= 16usize);
+   assert!(16usize <= x);
    // Test: `Eq` for usize.
    assert!(x == 16usize);
+   assert!(16usize == x);
 }
