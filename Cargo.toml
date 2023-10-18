@@ -2,7 +2,7 @@
 name = "index-ext"
 description = "Index slices with arbitrary ints and as arrays."
 license = "Apache-2.0 OR MIT OR Zlib"
-version = "1.0.0-beta.0"
+version = "1.0.0-beta.1"
 authors = ["Andreas Molzer <andreas.molzer@gmx.de>"]
 edition = "2018"
 
@@ -22,7 +22,7 @@ libc = "0.2"
 
 [features]
 # Activate some additional operations that require nightly
-nightly = []
+# nightly = []
 alloc = []
 
 [[example]]
