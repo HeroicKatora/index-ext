@@ -11,10 +11,10 @@ which `usize` is the wrong choice. With the types and trait provided here, this
 just works for smaller and larger integer types than `usize`.
 
 ```rust
-use index_ext::{Int, SliceIntExt};
+use index_ext::{Intex, SliceIntExt};
 let buffer = [0; 256];
-assert_eq!(buffer[Int(255_u8)], 0);
-assert_eq!(buffer[Int(255_i32)], 0);
+assert_eq!(buffer[Intex(255_u8)], 0);
+assert_eq!(buffer[Intex(255_i32)], 0);
 assert_eq!(buffer.get_int(-1_i8), None);
 assert_eq!(buffer.get_int(u128::max_value()), None);
 ```

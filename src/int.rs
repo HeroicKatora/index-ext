@@ -10,10 +10,10 @@ use core::num::TryFromIntError;
 /// * [`TryIndex`] uses `TryInto<usize>` to convert an type into an index, slightly making them
 ///   more convenient to use where the error conditions have been checked through external means or
 ///   where such panicking is permissible.
-/// * [`Int`] wraps an implementor of [`IntSliceIndex`] to turn it into an implementor of
+/// * [`Intex`] wraps an implementor of [`IntSliceIndex`] to turn it into an implementor of
 ///   `ops::Index` and `ops::IndexMut` as well.
 ///
-/// [`Int`]: struct.Int.html
+/// [`Intex`]: struct.Intex.html
 /// [`IntSliceIndex`]: ../trait.IntSliceIndex.html
 /// [`TryIndex`]: struct.TryIndex.html
 use core::ops::{Range, RangeFrom, RangeTo};
@@ -22,7 +22,7 @@ use core::slice::SliceIndex;
 use self::sealed::{IndexSealed, IntoIntIndex};
 use super::IntSliceIndex;
 
-/// Sealed traits for making `Int` work as an index, without exposing too much.
+/// Sealed traits for making `Intex` work as an index, without exposing too much.
 ///
 /// ## Navigating the jungle of traits
 /// The main point here is to properly seal the traits. Parts of this are meant to be adopted by
@@ -88,7 +88,7 @@ pub(crate) mod sealed {
         fn index_mut(self, slice: &mut T) -> &mut Self::Output;
     }
 
-    /// Seals the `Int` extension trait.
+    /// Seals the `Intex` extension trait.
     /// The methods added there are intended to be like inherent methods on the respective
     /// implementors which means additional implementors are not intended.
     pub trait SealedSliceIntExt {}
@@ -426,38 +426,38 @@ where
 /// An adaptor for `ops::Index` that uses this crate's `IntSliceIndex` instead of the standard one.
 ///
 /// This struct can be used to index a slice with an arbitrary integer type, using the standard
-/// indexing syntax. It is also constructed by the [`Int`] method exported in the crate root. The
+/// indexing syntax. It is also constructed by the [`Intex`] method exported in the crate root. The
 /// indexing operation will first try to convert the number of a `usize` index and then do the
 /// usual indexing.
 ///
-/// [`Int`]: ../fn.Int.html
+/// [`Intex`]: ../fn.Intex.html
 ///
 /// ```rust
-/// use index_ext::int::Int;
-/// let val = [0u8; 2][Int(1u32)];
+/// use index_ext::int::Intex;
+/// let val = [0u8; 2][Intex(1u32)];
 /// ```
 ///
 /// This is a transparent wrapper.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Int<T>(pub T);
+pub struct Intex<T>(pub T);
 
-impl<T, U> core::ops::Index<Int<T>> for [U]
+impl<T, U> core::ops::Index<Intex<T>> for [U]
 where
     T: IntSliceIndex<[U]> + IndexSealed,
 {
     type Output = <T as sealed::IntSliceIndex<[U]>>::Output;
 
-    fn index(&self, idx: Int<T>) -> &Self::Output {
+    fn index(&self, idx: Intex<T>) -> &Self::Output {
         <T as sealed::IntSliceIndex<[U]>>::index(idx.0, self)
     }
 }
 
-impl<T, U> core::ops::IndexMut<Int<T>> for [U]
+impl<T, U> core::ops::IndexMut<Intex<T>> for [U]
 where
     T: IntSliceIndex<[U]> + IndexSealed,
 {
-    fn index_mut(&mut self, idx: Int<T>) -> &mut Self::Output {
+    fn index_mut(&mut self, idx: Intex<T>) -> &mut Self::Output {
         <T as sealed::IntSliceIndex<[U]>>::index_mut(idx.0, self)
     }
 }

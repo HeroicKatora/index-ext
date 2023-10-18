@@ -11,10 +11,10 @@
 //! the same name, for both panicking and fallible accessors).
 //!
 //! ```
-//! use index_ext::{Int, SliceIntExt};
+//! use index_ext::{Intex, SliceIntExt};
 //!
-//! let fine = [0u8; 2][Int(1u32)];
-//! let also = [0u8; 2][Int(1u128)];
+//! let fine = [0u8; 2][Intex(1u32)];
+//! let also = [0u8; 2][Intex(1u128)];
 //!
 //! assert_eq!([0u8; 2].get_int(u128::max_value()), None);
 //! ```
@@ -85,18 +85,18 @@ pub mod tag;
 ///
 /// This trait enables the generic [`SliceIntExt::get_int`] method.
 ///
-/// [`SliceIntExt::get_int`]: trait.Int.html#fn.get_int
+/// [`SliceIntExt::get_int`]: trait.Intex.html#fn.get_int
 pub trait IntSliceIndex<T: ?Sized>: int::sealed::SealedSliceIndex<T> {}
 
 pub use int::SliceIntExt;
 
 /// Convert an arbitrary integer into an index.
 ///
-/// This method simply constructs an inner transparent wrapper struct `Int` but can be used as an
+/// This method simply constructs an inner transparent wrapper struct `Intex` but can be used as an
 /// alternative which is imported with the same name, and at the same time, as the trait.
 #[allow(non_snake_case)]
-pub fn Int<T>(idx: T) -> int::Int<T> {
-    int::Int(idx)
+pub fn Intex<T>(idx: T) -> int::Intex<T> {
+    int::Intex(idx)
 }
 
 macro_rules! doctest_readme {
@@ -109,30 +109,30 @@ doctest_readme!(include_str!("../Readme.md"));
 
 #[cfg(test)]
 mod test {
-    use super::{Int, SliceIntExt};
+    use super::{Intex, SliceIntExt};
 
     #[test]
     #[should_panic = "100"]
     fn panics_with_length_u32() {
-        [0u8; 0][Int(100u32)];
+        [0u8; 0][Intex(100u32)];
     }
 
     #[test]
     #[should_panic = "100"]
     fn panics_with_length_u8() {
-        [0u8; 0][Int(100u8)];
+        [0u8; 0][Intex(100u8)];
     }
 
     #[test]
     #[should_panic = "-1"]
     fn panics_with_length_i8() {
-        [0u8; 0][Int(-1i8)];
+        [0u8; 0][Intex(-1i8)];
     }
 
     #[test]
     #[should_panic = "100000000000000000000000000000000000000"]
     fn panics_with_length_u128() {
-        [0u8; 0][Int(100_000_000_000_000_000_000_000_000_000_000_000_000u128)];
+        [0u8; 0][Intex(100_000_000_000_000_000_000_000_000_000_000_000_000u128)];
     }
 
     #[test]
@@ -169,8 +169,8 @@ mod test {
         let mut slice = [0u8, 1, 2, 3];
         macro_rules! assert_slice_eq {
             (@$slice:path, $idx:expr, $exp:expr) => {
-                assert_eq!($slice[Int($idx)], $exp);
-                assert_eq!(&mut $slice[Int($idx)], $exp);
+                assert_eq!($slice[Intex($idx)], $exp);
+                assert_eq!(&mut $slice[Intex($idx)], $exp);
 
                 unsafe {
                     assert_eq!($slice.get_int_unchecked($idx), $exp);
