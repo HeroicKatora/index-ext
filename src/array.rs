@@ -24,18 +24,23 @@ use core::ops::{Index, IndexMut};
 /// right hand side array pattern.
 ///
 /// ```
-/// use index_ext::array::RangeTo;
+/// use index_ext::array::ArrayPrefix;
 /// # let buf = &[0u8; 3][..];
-/// let [r, g, b] = buf[RangeTo];
+/// let [r, g, b] = buf[ArrayPrefix];
 /// ```
-pub struct RangeTo<const N: usize>;
+///
+/// To slice off an array in the middle of a slice, utilize the common pattern of indexing twice.
+///
+/// ```
+/// use index_ext::array::ArrayPrefix;
+/// # let buf = &[0u8; 3][..];
+/// let [u, v] = buf[1..][ArrayPrefix];
+/// ```
+pub struct ArrayPrefix<const N: usize>;
 
-/// An alias for `RangeTo` which may sometimes be more expressive.
-pub type Prefix<const N: usize> = RangeTo<N>;
-
-impl<T, const N: usize> Index<RangeTo<N>> for [T] {
+impl<T, const N: usize> Index<ArrayPrefix<N>> for [T] {
     type Output = [T; N];
-    fn index(&self, _: RangeTo<{ N }>) -> &[T; N] {
+    fn index(&self, _: ArrayPrefix<{ N }>) -> &[T; N] {
         let slice = &self[..N];
         unsafe {
             // SAFETY: the layout of slices and arrays of the same length are the same. We'd like
@@ -46,8 +51,8 @@ impl<T, const N: usize> Index<RangeTo<N>> for [T] {
     }
 }
 
-impl<T, const N: usize> IndexMut<RangeTo<N>> for [T] {
-    fn index_mut(&mut self, _: RangeTo<{ N }>) -> &mut [T; N] {
+impl<T, const N: usize> IndexMut<ArrayPrefix<N>> for [T] {
+    fn index_mut(&mut self, _: ArrayPrefix<{ N }>) -> &mut [T; N] {
         let slice = &mut self[..N];
         unsafe {
             // SAFETY: the layout of slices and arrays of the same length are the same. We'd like

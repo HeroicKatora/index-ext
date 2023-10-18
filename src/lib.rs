@@ -1,4 +1,4 @@
-//! Adds more index types.
+//! Adds more index types, improving correctness and clarifying intent.
 //!
 //! There are cases where an index type might not be `usize`, many of them for compatibility
 //! reasons. For example, an archive format may choose to always represent its offsets as `u32` or
@@ -21,15 +21,15 @@
 //!
 //! ## Nightly features
 //!
-//! * The `RangeTo` type is a const generics enabled index that return arrays `[T; N]` instead of
-//! slices. Due to recent advances in parameter deduction, the length parameter need not even be
+//! * The `ArrayPrefix` type is a const generics enabled index that return arrays `[T; N]` instead
+//! of slices. Due to recent advances in parameter deduction, the length parameter need not even be
 //! named.
 //!
 //! ```
 //! # let slice = [0; 4];
-//! use index_ext::array::RangeTo;
+//! use index_ext::array::ArrayPrefix;
 //! // Grab an array of three element from a slice.
-//! let [r, g, b] = &slice[RangeTo];
+//! let [r, g, b] = &slice[ArrayPrefix];
 //! ```
 //!
 //! ## Unfinished features
@@ -74,6 +74,7 @@ pub mod mem;
 pub mod tag;
 
 pub use int::SliceIntExt;
+pub use array::ArrayPrefix;
 
 /// Convert an arbitrary integer into an index.
 ///
