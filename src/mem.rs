@@ -179,6 +179,14 @@ macro_rules! lossless_integer {
                 self.partial_cmp(&other.get())
             }
         }
+
+        impl core::fmt::Display for $name {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                // Uses the pointer type, avoiding any non-register-sized arguments to display and
+                // code gen for that. This one is more likely to be needed already.
+                self.get().fmt(f)
+            }
+        }
     };
 }
 
@@ -336,4 +344,11 @@ fn mem_128_operations() {
    // Test: `Eq` for usize.
    assert!(x == 16usize);
    assert!(16usize == x);
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn fmt_128() {
+   let x = Umem128::new(16).unwrap();
+   assert!(alloc::format!("{x}") == "16");
 }
