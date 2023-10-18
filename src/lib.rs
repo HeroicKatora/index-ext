@@ -11,7 +11,7 @@
 //! the same name, for both panicking and fallible accessors).
 //!
 //! ```
-//! use index_ext::Int;
+//! use index_ext::{Int, SliceIntExt};
 //!
 //! let fine = [0u8; 2][Int(1u32)];
 //! let also = [0u8; 2][Int(1u128)];
@@ -68,19 +68,12 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-mod sealed {
-    /// Seals the `Int` extension trait.
-    /// The methods added there are intended to be like inherent methods on the respective
-    /// implementors which means additional implementors are not intended.
-    pub trait Sealed {}
-}
-
 pub mod array;
 pub mod int;
 pub mod mem;
 pub mod tag;
 
-/// A trait for integer based indices.
+/// A trait for mathematical integer based indices.
 ///
 /// Any integer can be used as a fallible index where a machine word can be used by first trying to
 /// convert it into a `usize` and then indexing with the original method. From the point of the
@@ -90,203 +83,12 @@ pub mod tag;
 ///
 /// The output type of the indexing operation is an element or a slice respectively.
 ///
-/// This trait enables the generic [`Int::get_int`] method.
+/// This trait enables the generic [`SliceIntExt::get_int`] method.
 ///
-/// [`Int::get_int`]: trait.Int.html#fn.get_int
+/// [`SliceIntExt::get_int`]: trait.Int.html#fn.get_int
 pub trait IntSliceIndex<T: ?Sized>: int::sealed::SealedSliceIndex<T> {}
 
-/// An extension trait allowing slices to be indexed by everything convertible to `usize`.
-pub trait Int: sealed::Sealed {
-    /// Return a reference to an element or subslice with an integer index, or `None` if out of
-    /// bounds.
-    ///
-    /// This works like [`slice::get`] but allows arbitrary integers to be used as indices. It will
-    /// first try to convert them to an `usize`. For some types (`u8` and `u16`) this can never
-    /// fail while other types may refer to negative indices or are out-of-range. These cases are
-    /// treated as if the index was out-of-bounds due to the slice being too short.
-    ///
-    /// ## Examples
-    ///
-    /// ```
-    /// # use index_ext::Int;
-    /// let v = [10, 40, 30];
-    /// assert_eq!(Some(&40), v.get_int(1u64));
-    /// assert_eq!(Some(&[10, 40][..]), v.get_int(0u8..2));
-    /// assert_eq!(None, v.get_int(3u8));
-    /// assert_eq!(None, v.get_int(0u8..4));
-    /// assert_eq!(None, v.get_int(-1i8));
-    /// ```
-    ///
-    /// [`slice::get`]: https://doc.rust-lang.org/stable/std/primitive.slice.html#method.get
-    fn get_int<T>(&self, idx: T) -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
-    where
-        T: IntSliceIndex<Self>;
-
-    /// Return a mutable reference to an element or subslice with an integer index, or `None` if
-    /// out of bounds.
-    ///
-    /// This works like [`slice::get_mut`].
-    ///
-    /// ## Examples
-    ///
-    /// ```
-    /// # use index_ext::Int;
-    /// let x = &mut [0, 1, 2];
-    ///
-    /// if let Some(elem) = x.get_int_mut(1u8) {
-    ///     *elem = 42;
-    /// }
-    /// assert_eq!(x, &[0, 42, 2]);
-    /// ```
-    ///
-    /// [`slice::get_mut`]: https://doc.rust-lang.org/stable/std/primitive.slice.html#method.get_mut
-    fn get_int_mut<T>(
-        &mut self,
-        idx: T,
-    ) -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
-    where
-        T: IntSliceIndex<Self>;
-
-    /// Returns a reference to an element or subslice without doing bounds checking.
-    ///
-    /// ## Safety
-    ///
-    /// Like [`slice::get_unchecked`], calling this method with an out of bounds index is undefined
-    /// behaviour. _This includes indices for which conversion to a `usize` fails._
-    ///
-    /// [`slice::get_unchecked`]: https://doc.rust-lang.org/stable/std/primitive.slice.html#method.get_unchecked
-    ///
-    /// ## Examples
-    /// ```
-    /// # use index_ext::Int;
-    /// let x = &[1, 2, 4];
-    ///
-    /// unsafe {
-    ///     assert_eq!(x.get_int_unchecked(1i8), &2);
-    /// }
-    /// ```
-    unsafe fn get_int_unchecked<T>(
-        &self,
-        idx: T,
-    ) -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
-    where
-        T: IntSliceIndex<Self>;
-
-    /// Returns a mutable reference to an element or subslice without doing bounds checking.
-    ///
-    /// ## Safety
-    ///
-    /// Like [`slice::get_unchecked_mut`], calling this method with an out of bounds index is undefined
-    /// behaviour. _This includes indices for which conversion to a `usize` fails._
-    ///
-    /// ## Examples
-    ///
-    /// ```
-    /// # use index_ext::Int;
-    /// let x = &mut [1, 2, 4];
-    ///
-    /// unsafe {
-    ///     let elem = x.get_int_unchecked_mut(1u64);
-    ///     *elem = 13;
-    /// }
-    ///
-    /// assert_eq!(x, &[1, 13, 4]);
-    /// ```
-    ///
-    /// [`slice::get_unchecked_mut`]: https://doc.rust-lang.org/stable/std/primitive.slice.html#method.get_unchecked_mut
-    unsafe fn get_int_unchecked_mut<T>(
-        &mut self,
-        idx: T,
-    ) -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
-    where
-        T: IntSliceIndex<Self>;
-}
-
-impl<U> sealed::Sealed for [U] {}
-
-impl<U> Int for [U] {
-    fn get_int<T>(&self, idx: T) -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
-    where
-        T: IntSliceIndex<Self>,
-    {
-        <T as int::sealed::IntSliceIndex<Self>>::get(idx, self)
-    }
-
-    fn get_int_mut<T>(
-        &mut self,
-        idx: T,
-    ) -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
-    where
-        T: IntSliceIndex<Self>,
-    {
-        <T as int::sealed::IntSliceIndex<Self>>::get_mut(idx, self)
-    }
-
-    unsafe fn get_int_unchecked<T>(
-        &self,
-        idx: T,
-    ) -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
-    where
-        T: IntSliceIndex<Self>,
-    {
-        // Safety: Propagates the requirements from the caller that this is a valid index.
-        unsafe { <T as int::sealed::IntSliceIndex<Self>>::get_unchecked(idx, self) }
-    }
-
-    unsafe fn get_int_unchecked_mut<T>(
-        &mut self,
-        idx: T,
-    ) -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
-    where
-        T: IntSliceIndex<Self>,
-    {
-        // Safety: Propagates the requirements from the caller that this is a valid index.
-        unsafe { <T as int::sealed::IntSliceIndex<Self>>::get_unchecked_mut(idx, self) }
-    }
-}
-
-impl sealed::Sealed for str {}
-
-impl Int for str {
-    fn get_int<T>(&self, idx: T) -> Option<&'_ <T as int::sealed::IntSliceIndex<Self>>::Output>
-    where
-        T: IntSliceIndex<Self>,
-    {
-        <T as int::sealed::IntSliceIndex<Self>>::get(idx, self)
-    }
-
-    fn get_int_mut<T>(
-        &mut self,
-        idx: T,
-    ) -> Option<&'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output>
-    where
-        T: IntSliceIndex<Self>,
-    {
-        <T as int::sealed::IntSliceIndex<Self>>::get_mut(idx, self)
-    }
-
-    unsafe fn get_int_unchecked<T>(
-        &self,
-        idx: T,
-    ) -> &'_ <T as int::sealed::IntSliceIndex<Self>>::Output
-    where
-        T: IntSliceIndex<Self>,
-    {
-        // Safety: Propagates the requirements from the caller that this is a valid index.
-        unsafe { <T as int::sealed::IntSliceIndex<Self>>::get_unchecked(idx, self) }
-    }
-
-    unsafe fn get_int_unchecked_mut<T>(
-        &mut self,
-        idx: T,
-    ) -> &'_ mut <T as int::sealed::IntSliceIndex<Self>>::Output
-    where
-        T: IntSliceIndex<Self>,
-    {
-        // Safety: Propagates the requirements from the caller that this is a valid index.
-        unsafe { <T as int::sealed::IntSliceIndex<Self>>::get_unchecked_mut(idx, self) }
-    }
-}
+pub use int::SliceIntExt;
 
 /// Convert an arbitrary integer into an index.
 ///
@@ -307,7 +109,7 @@ doctest_readme!(include_str!("../Readme.md"));
 
 #[cfg(test)]
 mod test {
-    use super::Int;
+    use super::{Int, SliceIntExt};
 
     #[test]
     #[should_panic = "100"]
