@@ -13,7 +13,8 @@
 //!
 //! Imagine some interface defining indices to be in the range of a `u64`. A 32-bit platform
 //! implementing this interface may be torn between using `u64` for the intent, as well as its own
-//! `isize` for the smaller representation. The corresponding equivalent combines both:
+//! `isize` for the smaller representation. The corresponding type from this module can combine
+//! both properties. A demonstration by types beyond the size of most platforms:
 //!
 //! ```
 //! use core::mem::size_of;
@@ -74,7 +75,7 @@ macro_rules! lossless_integer {
         }
 
         $(#[$attr])*
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
         #[repr(transparent)]
         pub struct $name(
             <
@@ -120,6 +121,36 @@ macro_rules! lossless_integer {
         impl From<$name> for $under {
             fn from(val: $name) -> $under {
                 val.into_inner()
+            }
+        }
+
+        impl PartialEq<$under> for $name {
+            fn eq(&self, other: &$under) -> bool {
+                self.into_inner() == *other
+            }
+            fn ne(&self, other: &$under) -> bool {
+                self.into_inner() != *other
+            }
+        }
+
+        impl PartialEq<$sizet> for $name {
+            fn eq(&self, other: &$sizet) -> bool {
+                self.get() == *other
+            }
+            fn ne(&self, other: &$sizet) -> bool {
+                self.get() != *other
+            }
+        }
+
+        impl PartialOrd<$under> for $name {
+            fn partial_cmp(&self, other: &$under) -> Option<core::cmp::Ordering> {
+                self.into_inner().partial_cmp(other)
+            }
+        }
+
+        impl PartialOrd<$sizet> for $name {
+            fn partial_cmp(&self, other: &$sizet) -> Option<core::cmp::Ordering> {
+                self.get().partial_cmp(other)
             }
         }
     };
@@ -257,3 +288,22 @@ integer_diff!(
     /// A u128 that is also in the value range of an isize.
     pub struct Udiff128(u128)
 );
+
+#[test]
+fn mem_128_operations() {
+   let x = Umem128::new(16).unwrap();
+   // Test: refl-`Eq`.
+   assert!(x == x);
+   // Test: refl-`Ord`.
+   assert!(x <= x);
+
+   // Test: `Ord` for underlying type.
+   assert!(x <= 16u128);
+   // Test: `Eq` for underlying type.
+   assert!(x == 16u128);
+
+   // Test: `Ord` for usize.
+   assert!(x <= 16usize);
+   // Test: `Eq` for usize.
+   assert!(x == 16usize);
+}
