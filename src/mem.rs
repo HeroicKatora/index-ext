@@ -124,19 +124,15 @@ macro_rules! lossless_integer {
             }
         }
 
+        // Note: clippy says implementing `ne` is not necessary. We'll see about that if any
+        // performance complaints reach the repository.
         impl PartialEq<$under> for $name {
             fn eq(&self, other: &$under) -> bool {
                 self.into_inner() == *other
             }
-            fn ne(&self, other: &$under) -> bool {
-                self.into_inner() != *other
-            }
         }
         impl PartialEq<$name> for $under {
             fn eq(&self, other: &$name) -> bool {
-                *self == other.into_inner()
-            }
-            fn ne(&self, other: &$name) -> bool {
                 *self == other.into_inner()
             }
         }
@@ -145,16 +141,10 @@ macro_rules! lossless_integer {
             fn eq(&self, other: &$sizet) -> bool {
                 self.get() == *other
             }
-            fn ne(&self, other: &$sizet) -> bool {
-                self.get() != *other
-            }
         }
         impl PartialEq<$name> for $sizet {
             fn eq(&self, other: &$name) -> bool {
                 *self == other.get()
-            }
-            fn ne(&self, other: &$name) -> bool {
-                *self != other.get()
             }
         }
 
