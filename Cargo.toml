@@ -21,8 +21,6 @@ generativity = "1"
 libc = "0.2"
 
 [features]
-# Activate some additional operations that require nightly
-# nightly = []
 alloc = []
 
 [[example]]

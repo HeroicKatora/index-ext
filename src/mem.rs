@@ -17,10 +17,10 @@
 //!
 //! ```
 //! use core::mem::size_of;
-//! use index_ext::mem::Umem64;
+//! use index_ext::mem::Imem128;
 //!
-//! assert!(size_of::<Umem64>() <= size_of::<usize>());
-//! assert!(size_of::<Umem64>() <= size_of::<u64>());
+//! assert!(size_of::<Imem128>() <= size_of::<usize>());
+//! assert!(size_of::<Imem128>() <= size_of::<i128>());
 //! ```
 //!
 //! Keep in mind the types are most useful for representing values in and relative to your own
@@ -189,6 +189,16 @@ integer_mem!(
 );
 
 integer_mem!(
+    /// An i128 that is also in the value range of a usize.
+    pub struct Imem128(i128)
+);
+
+integer_mem!(
+    /// A u128 that is also in the value range of a usize.
+    pub struct Umem128(u128)
+);
+
+integer_mem!(
     /// An isize that is also in the value range of a usize.
     pub struct Imem(isize)
 );
@@ -236,4 +246,14 @@ integer_diff!(
 integer_diff!(
     /// A usize that is also in the value range of an isize.
     pub struct Udiff(usize)
+);
+
+integer_diff!(
+    /// A i128 that is also in the value range of an isize.
+    pub struct Idiff128(i128)
+);
+
+integer_diff!(
+    /// A u128 that is also in the value range of an isize.
+    pub struct Udiff128(u128)
 );
