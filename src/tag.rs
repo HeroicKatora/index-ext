@@ -1,12 +1,19 @@
-//! Not quite dependent typing for eliding bounds checks.
+//! Statically elide bounds checks with the type system.
 //!
 //! ## Rough mechanism
 //!
-//! The main idea is to use types as a compile time tag to identify a particular exact length bound
-//! without storing this bound in all instances associated with it. Thusly, we can construct
-//! indices that are guaranteed in-bounds of slices tagged with the same type, while storing them
-//! independent of each other and without introducing any borrow coupling. This then _guarantees_ a
-//! bounds-check free code path for indexing into the slices.
+//! The main idea is to use types as a compile time tag to identify a particular length of a slice
+//! without storing this bound in the instances associated with the constraint. For this, we
+//! utilize strategies such as [generativity] or concrete compile time tags.
+//!
+//! [generativity]: https://docs.rs/generativity/latest/generativity/
+//!
+//! This allows us to construct wrapper types for indices and slices that guarantees its accesses
+//! to be in-bounds when combined with any other value with the same tag. Critically, these indices
+//! and slices can be stored and acted on independent of each other and without introducing borrow
+//! coupling between them. The type system _guarantees_ a bounds-check free code path for indexing
+//! into the slices by adding an indexing operator which unconditionally performs the unsafe
+//! access.
 //!
 //! This works particularly well for programs with fixed size buffers, i.e. kernels, bootloaders,
 //! embedded, high-assurance programs. If you encapsulate the `ExactSize` instance containing the
@@ -21,9 +28,9 @@
 //!    the associated length as a fixed number. The former let's you give it a type as a name while
 //!    the latter is based on generic parameters.
 //!
-//! 2. The generative way. The [`Generative`] type is unique for every created instance by having
+//! 2. The generative way. The [`Generative`] type is unique for every created instance, by having
 //!    a unique lifetime parameter.  That is, you can not choose its lifetime parameters freely.
-//!    Instead, to create an instance you write a function be prepared to handle arbitrary lifetime
+//!    Instead, to create an instance you write a function prepared to handle arbitrary lifetime
 //!    and the library hands an instance to you. This makes the exact lifetime opaque to you and
 //!    the compiler which forces all non-local code to assume that it is indeed unique and it can
 //!    not be unified with any other. We associate such a [`Generative`] instance with the length
@@ -33,27 +40,35 @@
 //!    unique bounds. This requires some unsafe code and the programmers guarantee of uniqueness of
 //!    values but permits the combination of runtime values with `'static` lifetime of the tag.
 //!
-//! Each tag guarantees that all [`Slice`] with that exact same tag are at least as long
-//! as all the sizes in [`Len`] structs of the same lifetime and each [`Idx`] is bounded by some
-//! [`Len`].  While this may seem very restrictive at first, it still allows you to pass
-//! information on a slice's length across function boundaries by explicitly mentioning the same
-//! lifetime twice.  Additionally you're allowed some mutable operations on indices that can not
-//! exceed the original bounds.
+//! Each tag relates to _one_ specific length of slices, without encoding that value itself into
+//! values but rather this is a 'hidden' variable. Usage of the tag guarantees a separation between
+//! slices associated with the tag and all indices. This allows transitive reasoning: All [`Slice`]
+//! with that exact same tag are at least as long as all the sizes in [`Prefix`] structs of the
+//! same lifetime and strictly for [`Idx`]. Note that it even allows passing information on a
+//! slice's length across function boundaries by explicitly mentioning the same tag such as a
+//! generative lifetime twice.
 //!
 //! Use [`with_ref`] and [`with_mut`] as main entry functions or one the constructors on the type
-//! [`Generative`]. Note the interaction with the `generativity` crate which provides a macro that
+//! [`Generative`]. Note the interaction with the [`generativity`] crate which provides a macro that
 //! doesn't influence code flow, instead of requiring a closure wrapper like the methods given in
 //! this crate.
+//!
+//! [`generativity`]: https://docs.rs/generativity/
 //!
 //! [`with_ref`]: fn.with_ref.html
 //! [`with_mut`]: fn.with_mut.html
 //!
-//! Additionally, the module provides an 'algebra' for tags such that you can dynamically prove two
-//! tags to be equivalent, comparable, etc. Then you can leverage these facts (which are also
-//! encoded as types) to substitute tags in different manner. See the [`LessEq`] and [`struct@Eq`]
-//! types as well as the many combinators on [`ExactSize`], [`Len`], and [`Idx`]. This is possible
-//! since each tag merely represents a 'dependently typed' (intuitionistic, extensional) predicate
-//! on the length of some particular slice value.
+//! The interface also permits some mutable operations on indices. These operations are restricted
+//! to some that can not make the new value exceed the bound of the hidden variable (such as:
+//! monotonically decreasing operations).
+//!
+//! The module even provides an 'algebra' for type level tags themselves. you can dynamically prove
+//! two tags to be equivalent, comparable, etc, by asserting that of the _hidden_ variables
+//! associated with each tag. This does not necessarily require the hidden value to be concrete but
+//! it is most powerful when you locally haven an [`ExactSize`] representing that hidden value.
+//! Then you can leverage these facts (which are also encoded as zero-sized types) to substitute
+//! tags in different manner. See the [`LessEq`] and [`struct@Eq`] types as well as the many
+//! combinators on [`ExactSize`], [`Prefix`], and [`Idx`].
 //!
 //! ## Checked constant bounds
 //!
@@ -109,8 +124,12 @@ pub struct Generative<'lt> {
 /// See <https://doc.rust-lang.org/nomicon/coercions.html#coercions>
 unsafe impl Tag for Generative<'_> {}
 
-/// A named unique tag.
-pub struct Named<T> {
+/// A unique tag, 'named' by its type parameter.
+///
+/// Note that this type is safe to construct, but it is not safe to tag a slice or index with it.
+/// The user is responsible for ensuring the uniqueness of the type parameter, which is necessary
+/// for the soundness of wrapping an index or slice.
+pub struct TagNamed<T> {
     phantom: PhantomData<T>,
 }
 
@@ -127,7 +146,7 @@ pub fn with_ref<'slice, T, U>(
     // We can not use `Generative::with_ref` here due to a lifetime conflict. If this was defined
     // in this body then it would not outlive `'slice`.
     let len = ExactSize {
-        inner: Len {
+        inner: Prefix {
             len: slice.len(),
             tag: Generative {
                 generated: PhantomData,
@@ -153,7 +172,7 @@ pub fn with_mut<'slice, T, U>(
     // We can not use `Generative::with_mut` here due to a lifetime conflict. If this was defined
     // in this body then it would not outlive `'slice`.
     let len = ExactSize {
-        inner: Len {
+        inner: Prefix {
             len: slice.len(),
             tag: Generative {
                 generated: PhantomData,
@@ -178,14 +197,14 @@ pub fn with_mut<'slice, T, U>(
 /// the compiler's optimizer and inline pass is no longer aware of the connection and would
 /// otherwise insert another check when the slice is indexed later.
 #[derive(Clone, Copy)]
-pub struct Len<Tag> {
+pub struct Prefix<Tag> {
     len: usize,
     tag: Tag,
 }
 
 /// A number that overestimates the guaranteed size of a number of slices.
 ///
-/// This is the counter part of [`Len`]. It encapsulates a field that is guaranteed to be at least
+/// This is the counter part of [`Prefix`]. It encapsulates a field that is guaranteed to be at least
 /// the size of all indices with the exact same tag. In other words, all slices at least as long
 /// as this number are safe to be accessed by indices.
 #[derive(Clone, Copy)]
@@ -209,7 +228,7 @@ pub struct NonZeroLen<Tag> {
 /// custom tags.
 #[derive(Clone, Copy)]
 pub struct ExactSize<Tag> {
-    inner: Len<Tag>,
+    inner: Prefix<Tag>,
 }
 
 /// A proof that the length if A is smaller or equal to B.
@@ -296,9 +315,9 @@ unsafe impl<const N: usize> Tag for Const<N> {}
 /// A valid index for all slices of the same length.
 ///
 /// While this has a generic parameter, you can only instantiate this type for specific types
-/// through one of the constructors of a corresponding [`Len]` struct.
+/// through one of the constructors of a corresponding [`Prefix]` struct.
 ///
-/// [`Len`]: struct.Len.html
+/// [`Prefix`]: struct.Prefix.html
 #[derive(Clone, Copy)]
 pub struct Idx<I, Tag> {
     idx: I,
@@ -318,15 +337,15 @@ pub struct IdxBox<Idx> {
     exact_size: usize,
 }
 
-impl<T: Tag> Len<T> {
+impl<T: Tag> Prefix<T> {
     /// Interpret this with the tag of a set of potentially longer slices.
     ///
     /// The proof of inequality was performed in any of the possible constructors that allow the
     /// instance of `LessEq` to exist in the first place.
-    pub fn with_tag<NewT>(self, less: LessEq<T, NewT>) -> Len<NewT> {
+    pub fn with_tag<NewT>(self, less: LessEq<T, NewT>) -> Prefix<NewT> {
         let len = self.len;
         let tag = less.b;
-        Len { len, tag }
+        Prefix { len, tag }
     }
 
     /// Returns the stored length.
@@ -440,7 +459,7 @@ impl<T: Tag> Len<T> {
     /// Create a smaller length.
     #[must_use = "Returns a new index"]
     pub fn saturating_sub(self, sub: usize) -> Self {
-        Len {
+        Prefix {
             len: self.len.saturating_sub(sub),
             tag: self.tag,
         }
@@ -449,7 +468,7 @@ impl<T: Tag> Len<T> {
     /// Bound the length from above.
     #[must_use = "Returns a new index"]
     pub fn truncate(self, min: usize) -> Self {
-        Len {
+        Prefix {
             len: self.len.min(min),
             tag: self.tag,
         }
@@ -494,7 +513,7 @@ impl<T: Tag> Capacity<T> {
 
 impl<T: Tag> NonZeroLen<T> {
     /// Construct the length of a non-empty slice.
-    pub fn new(complete: Len<T>) -> Option<Self> {
+    pub fn new(complete: Prefix<T>) -> Option<Self> {
         let len = NonZeroUsize::new(complete.len)?;
         Some(NonZeroLen {
             len,
@@ -532,8 +551,8 @@ impl<T: Tag> NonZeroLen<T> {
 
     /// Construct the corresponding potentially empty length representation.
     #[must_use = "Returns a new index"]
-    pub fn into_len(self) -> Len<T> {
-        Len {
+    pub fn into_len(self) -> Prefix<T> {
+        Prefix {
             len: self.len.get(),
             tag: self.tag,
         }
@@ -560,7 +579,7 @@ impl<T> ExactSize<T> {
     /// All `ExactSize` instances with the same tag type must also have the same `len` field.
     pub const unsafe fn new_untagged(len: usize, tag: T) -> Self {
         ExactSize {
-            inner: Len { len, tag },
+            inner: Prefix { len, tag },
         }
     }
 
@@ -572,7 +591,7 @@ impl<T> ExactSize<T> {
     /// there mustn't be any other `ExactSize` with a differing length.
     ///
     /// `T` should be a type implementing `Tag` but this can not be expressed with `const fn` atm.
-    pub const unsafe fn from_len_untagged(bound: Len<T>) -> Self {
+    pub const unsafe fn from_len_untagged(bound: Prefix<T>) -> Self {
         ExactSize { inner: bound }
     }
 
@@ -678,7 +697,7 @@ impl<'lt> ExactSize<Generative<'lt>> {
     /// context (a small subset of #57563).
     pub fn with_guard(len: usize, _: generativity::Guard<'lt>) -> Self {
         ExactSize {
-            inner: Len {
+            inner: Prefix {
                 len,
                 tag: Generative {
                     generated: PhantomData,
@@ -705,7 +724,7 @@ impl<T: Tag> ExactSize<T> {
     ///
     /// You _must_ ensure that no slice with this same tag can be shorter than `len`. In particular
     /// there mustn't be any other `ExactSize` with a differing length.
-    pub unsafe fn from_len(len: Len<T>) -> Self {
+    pub unsafe fn from_len(len: Prefix<T>) -> Self {
         // Safety: Propagates a subset of safety requirements.
         unsafe { Self::from_len_untagged(len) }
     }
@@ -729,17 +748,17 @@ impl<T: Tag> ExactSize<T> {
         let len = self.inner.len;
         let tag = equality.b;
         ExactSize {
-            inner: Len { len, tag },
+            inner: Prefix { len, tag },
         }
     }
 
-    /// Convert this into a simple `Len` without changing the length.
+    /// Convert this into a simple `Prefix` without changing the length.
     ///
-    /// The `Len` is only required to be _not longer_ than all slices but not required to have the
+    /// The `Prefix` is only required to be _not longer_ than all slices but not required to have the
     /// exact separating size. As such, one can not use it to infer that some particular slice is
     /// long enough to be allowed. This is not safely reversible.
     #[must_use = "Returns a new index"]
-    pub fn into_len(self) -> Len<T> {
+    pub fn into_len(self) -> Prefix<T> {
         self.inner
     }
 
@@ -756,15 +775,15 @@ impl<T: Tag> ExactSize<T> {
         }
     }
 
-    /// Construct a new bound from an pair of Len and Capacity with the same value.
+    /// Construct a new bound from an pair of Prefix and Capacity with the same value.
     ///
-    /// Note that the invariant of `ExactSize` is that all `Len` are guaranteed to be at most the
+    /// Note that the invariant of `ExactSize` is that all `Prefix` are guaranteed to be at most the
     /// size and all `Capacity` are guaranteed to be at least the size. The only possible overlap
     /// between the two is the exact length, which we can dynamically check.
-    pub fn with_matching_pair(len: Len<T>, cap: Capacity<T>) -> Option<Self> {
+    pub fn with_matching_pair(len: Prefix<T>, cap: Capacity<T>) -> Option<Self> {
         if len.get() == cap.get() {
             Some(ExactSize {
-                inner: Len {
+                inner: Prefix {
                     len: len.get(),
                     tag: len.tag,
                 },
@@ -827,11 +846,11 @@ impl<A: Tag, B: Tag> LessEq<A, B> {
 
     /// Construct the proof from a pair of bounds for A and B.
     ///
-    /// The `Capacity` upper bounds all indices applicable to A, and the exact size. The `Len`
+    /// The `Capacity` upper bounds all indices applicable to A, and the exact size. The `Prefix`
     /// lower bounds all lengths and the exact size.
     ///
     /// This returns `Some` when the lower bound for B is not smaller than the upper bound for A.
-    pub fn with_pair(a: Capacity<A>, b: Len<B>) -> Option<Self> {
+    pub fn with_pair(a: Capacity<A>, b: Prefix<B>) -> Option<Self> {
         if b.get() >= a.get() {
             Some(LessEq { a: a.tag, b: b.tag })
         } else {
@@ -840,7 +859,7 @@ impl<A: Tag, B: Tag> LessEq<A, B> {
     }
 }
 
-impl<T> Named<T> {
+impl<T> TagNamed<T> {
     /// Create a new named tag.
     ///
     /// The instance is only to be encouraged to only use types private to your crate or module,
@@ -849,17 +868,17 @@ impl<T> Named<T> {
         // Const-fn does not allow dropping values. We don't want (and can't have) `T: Copy` so we
         // need to statically prove this to rustc by actually removing the drop call.
         let _ = core::mem::ManuallyDrop::new(t);
-        Named {
+        TagNamed {
             phantom: PhantomData,
         }
     }
 }
 
-unsafe impl<T> Tag for Named<T> {}
+unsafe impl<T> Tag for TagNamed<T> {}
 
-impl<T: Tag> From<NonZeroLen<T>> for Len<T> {
+impl<T: Tag> From<NonZeroLen<T>> for Prefix<T> {
     fn from(from: NonZeroLen<T>) -> Self {
-        Len {
+        Prefix {
             len: from.len.get(),
             tag: from.tag,
         }
@@ -911,8 +930,8 @@ impl<T> Idx<usize, T> {
 
     /// Get a length up-to, not including this index.
     #[must_use = "Returns a new index"]
-    pub fn into_len(self) -> Len<T> {
-        Len {
+    pub fn into_len(self) -> Prefix<T> {
+        Prefix {
             len: self.idx,
             tag: self.tag,
         }
@@ -934,8 +953,8 @@ impl<T> Idx<usize, T> {
 impl<T> Idx<RangeTo<usize>, T> {
     /// Get a length up-to, not including this index.
     #[must_use = "Returns a new index"]
-    pub fn into_end(self) -> Len<T> {
-        Len {
+    pub fn into_end(self) -> Prefix<T> {
+        Prefix {
             len: self.idx.end,
             tag: self.tag,
         }
@@ -945,7 +964,7 @@ impl<T> Idx<RangeTo<usize>, T> {
     ///
     /// This method return `Some` when `from` does not exceed the end index.
     #[must_use = "Returns a new index"]
-    pub fn range_from(self, from: Len<T>) -> Option<Idx<core::ops::Range<usize>, T>> {
+    pub fn range_from(self, from: Prefix<T>) -> Option<Idx<core::ops::Range<usize>, T>> {
         if from.len <= self.idx.end {
             Some(Idx {
                 idx: from.len..self.idx.end,
@@ -960,8 +979,8 @@ impl<T> Idx<RangeTo<usize>, T> {
 impl<T> Idx<RangeFrom<usize>, T> {
     /// Get a length up-to, not including this index.
     #[must_use = "Returns a new index"]
-    pub fn into_start(self) -> Len<T> {
-        Len {
+    pub fn into_start(self) -> Prefix<T> {
+        Prefix {
             len: self.idx.start,
             tag: self.tag,
         }
@@ -971,7 +990,7 @@ impl<T> Idx<RangeFrom<usize>, T> {
     ///
     /// This method return `Some` when `to` does not exceed the end index.
     #[must_use = "Returns a new index"]
-    pub fn range_to(self, to: Len<T>) -> Option<Idx<core::ops::Range<usize>, T>> {
+    pub fn range_to(self, to: Prefix<T>) -> Option<Idx<core::ops::Range<usize>, T>> {
         if to.len >= self.idx.start {
             Some(Idx {
                 idx: self.idx.start..to.len,
@@ -986,8 +1005,8 @@ impl<T> Idx<RangeFrom<usize>, T> {
 impl<T> Idx<Range<usize>, T> {
     /// Get a length up-to, not including this index.
     #[must_use = "Returns a new index"]
-    pub fn into_start(self) -> Len<T> {
-        Len {
+    pub fn into_start(self) -> Prefix<T> {
+        Prefix {
             len: self.idx.start,
             tag: self.tag,
         }
@@ -995,8 +1014,8 @@ impl<T> Idx<Range<usize>, T> {
 
     /// Get a length up-to, not including this index.
     #[must_use = "Returns a new index"]
-    pub fn into_end(self) -> Len<T> {
-        Len {
+    pub fn into_end(self) -> Prefix<T> {
+        Prefix {
             len: self.idx.end,
             tag: self.tag,
         }
@@ -1190,13 +1209,13 @@ where
     }
 }
 
-impl<T> Clone for Named<T> {
+impl<T> Clone for TagNamed<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> Copy for Named<T> {}
+impl<T> Copy for TagNamed<T> {}
 
 impl<T> Clone for Constant<T> {
     fn clone(&self) -> Self {
@@ -1241,7 +1260,7 @@ impl<const N: usize> Const<N> {
 
 #[cfg(feature = "alloc")]
 mod impl_of_boxed_idx {
-    use super::{ExactSize, Idx, IdxBox, Len, Tag};
+    use super::{ExactSize, Idx, IdxBox, Prefix, Tag};
     use core::ops::{RangeFrom, RangeTo};
 
     /// Sealed trait, quite unsafe..
@@ -1317,7 +1336,7 @@ mod impl_of_boxed_idx {
         /// The given size must not be smaller than the `bound` of this allocated. This guarantees
         /// that all indices within the box are valid for the Tag. Since you can only _view_ the
         /// indices, they will remain valid.
-        pub fn as_ref<T: Tag>(&self, size: Len<T>) -> Option<&'_ [Idx<I, T>]> {
+        pub fn as_ref<T: Tag>(&self, size: Prefix<T>) -> Option<&'_ [Idx<I, T>]> {
             if size.get() >= self.exact_size {
                 Some(unsafe {
                     // SAFETY: `Idx` is a transparent wrapper around `I`, the type of this slice,
@@ -1505,7 +1524,7 @@ mod tests {
 /// }
 ///
 /// assert_is_covariant! {
-///     (tag::Len<'r>) over 'r
+///     (tag::Prefix<'r>) over 'r
 /// }
 /// ```
 ///
@@ -1532,7 +1551,7 @@ mod tests {
 /// }
 ///
 /// assert_is_contravariant! {
-///     (tag::Len<'r>) over 'r
+///     (tag::Prefix<'r>) over 'r
 /// }
 /// ```
 extern "C" {}
