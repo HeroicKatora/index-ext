@@ -67,7 +67,7 @@
 //! associated with each tag. This does not necessarily require the hidden value to be concrete but
 //! it is most powerful when you locally haven an [`ExactSize`] representing that hidden value.
 //! Then you can leverage these facts (which are also encoded as zero-sized types) to substitute
-//! tags in different manner. See the [`LessEq`] and [`struct@Eq`] types as well as the many
+//! tags in different manner. See the [`TagLessEq`] and [`TagEq`] types as well as the many
 //! combinators on [`ExactSize`], [`Prefix`], and [`Idx`].
 //!
 //! ## Checked constant bounds
@@ -235,7 +235,7 @@ pub struct ExactSize<Tag> {
 ///
 /// This guarantees that indices of `A` can also be used in `B`.
 #[derive(Clone, Copy)]
-pub struct LessEq<TagA, TagB> {
+pub struct TagLessEq<TagA, TagB> {
     a: TagA,
     b: TagB,
 }
@@ -244,7 +244,7 @@ pub struct LessEq<TagA, TagB> {
 ///
 /// This guarantees that indices of `A` and `B` can be used interchangeably.
 #[derive(Clone, Copy)]
-pub struct Eq<TagA, TagB> {
+pub struct TagEq<TagA, TagB> {
     a: TagA,
     b: TagB,
 }
@@ -341,8 +341,8 @@ impl<T: Tag> Prefix<T> {
     /// Interpret this with the tag of a set of potentially longer slices.
     ///
     /// The proof of inequality was performed in any of the possible constructors that allow the
-    /// instance of `LessEq` to exist in the first place.
-    pub fn with_tag<NewT>(self, less: LessEq<T, NewT>) -> Prefix<NewT> {
+    /// instance of `TagLessEq` to exist in the first place.
+    pub fn with_tag<NewT>(self, less: TagLessEq<T, NewT>) -> Prefix<NewT> {
         let len = self.len;
         let tag = less.b;
         Prefix { len, tag }
@@ -479,8 +479,8 @@ impl<T: Tag> Capacity<T> {
     /// Interpret this with the tag of a set of potentially shorter slices.
     ///
     /// The proof of inequality was performed in any of the possible constructors that allow the
-    /// instance of `LessEq` to exist in the first place.
-    pub fn with_tag<NewT>(self, less: LessEq<NewT, T>) -> Capacity<NewT> {
+    /// instance of `TagLessEq` to exist in the first place.
+    pub fn with_tag<NewT>(self, less: TagLessEq<NewT, T>) -> Capacity<NewT> {
         let len = self.len;
         let tag = less.a;
         Capacity { len, tag }
@@ -524,8 +524,8 @@ impl<T: Tag> NonZeroLen<T> {
     /// Interpret this with the tag of a potentially longer slice.
     ///
     /// The proof of inequality was performed in any of the possible constructors that allow the
-    /// instance of `LessEq` to exist in the first place.
-    pub fn with_tag<NewT>(self, less: LessEq<T, NewT>) -> NonZeroLen<NewT> {
+    /// instance of `TagLessEq` to exist in the first place.
+    pub fn with_tag<NewT>(self, less: TagLessEq<T, NewT>) -> NonZeroLen<NewT> {
         let len = self.len;
         let tag = less.b;
         NonZeroLen { len, tag }
@@ -743,8 +743,8 @@ impl<T: Tag> ExactSize<T> {
     /// Interpret this with the tag of an equal sized slice.
     ///
     /// The proof of equality was performed in any of the possible constructors that allow the
-    /// instance of `Eq` to exist in the first place.
-    pub fn with_tag<NewT>(self, equality: Eq<T, NewT>) -> ExactSize<NewT> {
+    /// instance of `TagEq` to exist in the first place.
+    pub fn with_tag<NewT>(self, equality: TagEq<T, NewT>) -> ExactSize<NewT> {
         let len = self.inner.len;
         let tag = equality.b;
         ExactSize {
@@ -794,48 +794,48 @@ impl<T: Tag> ExactSize<T> {
     }
 }
 
-impl<A: Tag> Eq<A, A> {
+impl<A: Tag> TagEq<A, A> {
     /// Construct the reflexive proof.
     pub fn reflexive(tag: A) -> Self {
-        Eq { a: tag, b: tag }
+        TagEq { a: tag, b: tag }
     }
 }
 
-impl<A: Tag, B: Tag> Eq<A, B> {
+impl<A: Tag, B: Tag> TagEq<A, B> {
     /// Create an equality from evidence `a <= b <= a`.
-    pub fn new(lhs: LessEq<A, B>, _: LessEq<B, A>) -> Self {
-        Eq { a: lhs.a, b: lhs.b }
+    pub fn new(lhs: TagLessEq<A, B>, _: TagLessEq<B, A>) -> Self {
+        TagEq { a: lhs.a, b: lhs.b }
     }
 
     /// Swap the two tags, `a = b` iff `b = a`.
-    pub fn transpose(self) -> Eq<B, A> {
-        Eq {
+    pub fn transpose(self) -> TagEq<B, A> {
+        TagEq {
             a: self.b,
             b: self.a,
         }
     }
 
     /// Relax this into a less or equal relation.
-    pub fn into_le(self) -> LessEq<A, B> {
-        LessEq {
+    pub fn into_le(self) -> TagLessEq<A, B> {
+        TagLessEq {
             a: self.a,
             b: self.b,
         }
     }
 }
 
-impl<A: Tag> LessEq<A, A> {
+impl<A: Tag> TagLessEq<A, A> {
     /// Construct the reflexive proof.
     pub fn reflexive(tag: A) -> Self {
-        LessEq { a: tag, b: tag }
+        TagLessEq { a: tag, b: tag }
     }
 }
 
-impl<A: Tag, B: Tag> LessEq<A, B> {
+impl<A: Tag, B: Tag> TagLessEq<A, B> {
     /// Construct the proof from the sizes of A and B.
     pub fn with_sizes(a: ExactSize<A>, b: ExactSize<B>) -> Option<Self> {
         if a.get() <= b.get() {
-            Some(LessEq {
+            Some(TagLessEq {
                 a: a.inner.tag,
                 b: b.inner.tag,
             })
@@ -852,7 +852,7 @@ impl<A: Tag, B: Tag> LessEq<A, B> {
     /// This returns `Some` when the lower bound for B is not smaller than the upper bound for A.
     pub fn with_pair(a: Capacity<A>, b: Prefix<B>) -> Option<Self> {
         if b.get() >= a.get() {
-            Some(LessEq { a: a.tag, b: b.tag })
+            Some(TagLessEq { a: a.tag, b: b.tag })
         } else {
             None
         }
@@ -892,7 +892,7 @@ impl<T, I> Idx<I, T> {
     }
 
     /// Interpret this as an index into a larger slice.
-    pub fn with_tag<NewT>(self, larger: LessEq<T, NewT>) -> Idx<I, NewT> {
+    pub fn with_tag<NewT>(self, larger: TagLessEq<T, NewT>) -> Idx<I, NewT> {
         Idx {
             idx: self.idx,
             tag: larger.b,
@@ -1075,7 +1075,7 @@ impl<T: Tag, E> Slice<E, T> {
     }
 
     /// Interpret this as a slice with smaller length.
-    pub fn with_tag<NewT: Tag>(&self, _: LessEq<NewT, T>) -> &'_ Slice<E, NewT> {
+    pub fn with_tag<NewT: Tag>(&self, _: TagLessEq<NewT, T>) -> &'_ Slice<E, NewT> {
         // SAFETY: by NewT: Tag we know that T NewT is 1-ZST which makes Self have the same layout
         // as [E] and consequently the same layout as Self.  Further, smaller.a is evidence that
         // NewT is inhabited and NewT: Copy implies NewT: !Drop. Finally, the tag is valid for the
@@ -1085,7 +1085,7 @@ impl<T: Tag, E> Slice<E, T> {
     }
 
     /// Interpret this as a slice with smaller length.
-    pub fn with_tag_mut<NewT: Tag>(&mut self, _: LessEq<NewT, T>) -> &'_ mut Slice<E, NewT> {
+    pub fn with_tag_mut<NewT: Tag>(&mut self, _: TagLessEq<NewT, T>) -> &'_ mut Slice<E, NewT> {
         // SAFETY: by NewT: Tag we know that T NewT is 1-ZST which makes Self have the same layout
         // as [E] and consequently the same layout as Self.  Further, smaller.a is evidence that
         // NewT is inhabited and NewT: Copy implies NewT: !Drop. Finally, the tag is valid for the
@@ -1377,7 +1377,7 @@ mod impl_of_boxed_idx {
 
 #[cfg(test)]
 mod tests {
-    use super::{with_ref, Constant, ConstantSource, Eq, LessEq, Slice};
+    use super::{with_ref, Constant, ConstantSource, Slice, TagEq, TagLessEq};
 
     #[test]
     fn basics() {
@@ -1412,10 +1412,10 @@ mod tests {
         let all = csize.into_len().range_to_self();
 
         with_ref(&buffer[..], |slice, size| {
-            let lesseq = LessEq::with_sizes(size, csize).unwrap();
-            let moreeq = LessEq::with_sizes(csize, size).unwrap();
+            let lesseq = TagLessEq::with_sizes(size, csize).unwrap();
+            let moreeq = TagLessEq::with_sizes(csize, size).unwrap();
             // 'prove': csize = size
-            let eq = Eq::new(lesseq, moreeq).transpose();
+            let eq = TagEq::new(lesseq, moreeq).transpose();
 
             // Use this to transport the index.
             let all = all.with_tag(eq.into_le());
@@ -1441,11 +1441,11 @@ mod tests {
         let large = Constant::<LargeLen>::EXACT_SIZE;
 
         assert!(
-            LessEq::with_pair(small.into_capacity(), large.into_len()).is_some(),
+            TagLessEq::with_pair(small.into_capacity(), large.into_len()).is_some(),
             "Small is in fact less than large"
         );
         assert!(
-            LessEq::with_pair(large.into_capacity(), small.into_len()).is_none(),
+            TagLessEq::with_pair(large.into_capacity(), small.into_len()).is_none(),
             "Large should not appear less than small"
         );
     }
