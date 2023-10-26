@@ -2,9 +2,10 @@
 name = "index-ext"
 description = "Index slices with arbitrary ints and as arrays."
 license = "Apache-2.0 OR MIT OR Zlib"
-version = "1.0.0-beta.2"
+version = "1.0.0"
 authors = ["Andreas Molzer <andreas.molzer@gmx.de>"]
 edition = "2018"
+rust-version = "1.61"
 
 readme = "Readme.md"
 documentation = "https://docs.rs/index-ext"
