@@ -1554,4 +1554,5 @@ mod tests {
 ///     (tag::Prefix<'r>) over 'r
 /// }
 /// ```
-extern "C" {}
+#[cfg(doc)]
+mod _doctests {}

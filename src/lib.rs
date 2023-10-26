@@ -83,6 +83,7 @@ pub fn Intex<T>(idx: T) -> int::Intex<T> {
     int::Intex(idx)
 }
 
+#[cfg(doc)]
 macro_rules! doctest_readme {
     { $content:expr } => {
         /// A rendered version of the Readme file, documentation purpose only.
